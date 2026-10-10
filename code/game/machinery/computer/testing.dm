@@ -1,4 +1,145 @@
-// Uses global ruins_gen_job declared in code/_helpers/ruins_generation_job.dm
+GLOBAL_DATUM_INIT(station_wake_sequence, /datum/station_wake_sequence, new)
+GLOBAL_DATUM_INIT(bridge_crew_objectives, /datum/bridge_crew_objectives, new)
+
+// Shared recovery objectives issued by the bridge report. Each objective is
+// tied to a station state that the game can verify rather than a paper-only task.
+/datum/bridge_crew_objectives
+	var/issued = FALSE
+	var/list/completed = list()
+	var/power_stable_since = 0
+
+/datum/bridge_crew_objectives/proc/reset()
+	issued = FALSE
+	completed.Cut()
+	power_stable_since = 0
+
+/datum/bridge_crew_objectives/proc/issue()
+	issued = TRUE
+	check_progress()
+
+/datum/bridge_crew_objectives/proc/check_progress()
+	if(!issued)
+		return
+	if(!completed["wake_station"] && GLOB.station_wake_sequence.started && !GLOB.station_wake_sequence.active)
+		complete_objective("wake_station", "Station wake-up", 5)
+	if(!completed["water_service"] && GLOB.waterchip_installed)
+		complete_objective("water_service", "Water service restoration", 5)
+	if(!completed["power_grid"])
+		check_power_grid()
+
+/datum/bridge_crew_objectives/proc/check_power_grid()
+	var/powered = 0
+	var/total = 0
+	for(var/obj/machinery/power/area_smes/controller in SSmachines.machinery)
+		if(!is_station_turf(get_turf(controller)))
+			continue
+		total++
+		if(controller.operating)
+			powered++
+	if(!total || powered * 100 < total * 90)
+		power_stable_since = 0
+		return
+	if(!power_stable_since)
+		power_stable_since = world.time
+		return
+	if(world.time - power_stable_since >= 30 SECONDS)
+		complete_objective("power_grid", "Power-grid stabilization", 10)
+
+/datum/bridge_crew_objectives/proc/complete_objective(var/id, var/objective_name, var/reward)
+	if(completed[id])
+		return
+	completed[id] = TRUE
+	var/recipients = 0
+	for(var/mob/living/carbon/human/crew_member in GLOB.player_list)
+		if(!crew_member.client || !crew_member.mind || crew_member.stat == DEAD || !is_station_turf(get_turf(crew_member)) || player_is_antag(crew_member.mind))
+			continue
+		var/datum/preferences/prefs = crew_member.client.prefs
+		if(!prefs)
+			continue
+		prefs.meta_currency += reward
+		prefs.save_preferences()
+		recipients++
+		to_chat(crew_member, "<span class='notice'><b>Bridge recovery objective complete:</b> [objective_name]. +[reward] Leverage (total: [prefs.meta_currency]).</span>")
+	command_announcement.Announce("[objective_name] is complete. [recipients] eligible crew member[recipients == 1 ? "" : "s"] received [reward] Leverage.", "Bridge Operations")
+
+/datum/bridge_crew_objectives/proc/get_status_report()
+	if(!issued)
+		return "<p><b>Bridge recovery contract:</b> no report has been printed this shift.</p>"
+	var/wake_status = completed["wake_station"] ? "Complete" : "Pending"
+	var/water_status = completed["water_service"] ? "Complete" : "Pending"
+	var/power_status = completed["power_grid"] ? "Complete" : "Pending"
+	return "<h3>Bridge Recovery Contract</h3><table border='1' cellpadding='5'><tr><th>Objective</th><th>Status</th><th>Crew reward</th></tr><tr><td>Complete the WAKE STATION sequence</td><td>[wake_status]</td><td>5 Leverage</td></tr><tr><td>Install the water control chip</td><td>[water_status]</td><td>5 Leverage</td></tr><tr><td>Keep at least 90% of station power controllers online for 30 seconds</td><td>[power_status]</td><td>10 Leverage</td></tr></table><p>Rewards go to living, non-antagonist crew aboard when each objective clears.</p>"
+
+/datum/station_wake_sequence
+	var/active = FALSE
+	var/started = FALSE
+	var/list/targets = list()
+	var/list/enabled_rooms = list()
+	var/next_target = 1
+	var/lights_started = 0
+	var/thermostats_reset = 0
+	var/mob/operator
+
+/datum/station_wake_sequence/proc/start(mob/user)
+	if(started)
+		to_chat(user, "<span class='warning'>[active ? "A station wake sequence is already in progress." : "The station has already been awakened. Adjust lights and thermostats locally."]</span>")
+		return FALSE
+	started = TRUE
+	active = TRUE
+	operator = user
+	next_target = 1
+	lights_started = 0
+	thermostats_reset = 0
+	for(var/obj/machinery/light/fixture in world)
+		if(fixture.z in GLOB.using_map.station_levels)
+			fixture.bridge_startup_pending = !fixture.powered()
+			targets += fixture
+	for(var/obj/machinery/light_switch/light_switch in world)
+		if(light_switch.z in GLOB.using_map.station_levels)
+			targets += light_switch
+	for(var/obj/machinery/alarm/alarm in world)
+		if(alarm.z in GLOB.using_map.station_levels)
+			targets += alarm
+	to_chat(user, "<span class='notice'>Station wake sequence initiated: starting lights individually, then setting air alarm thermostats to 20°C, one device every half second.</span>")
+	advance()
+	return TRUE
+
+/datum/station_wake_sequence/proc/enable_room(area/room)
+	if(room && !(room in enabled_rooms))
+		enabled_rooms += room
+		room.set_lightswitch(TRUE, bridge_startup = TRUE)
+
+/datum/station_wake_sequence/proc/advance()
+	while(next_target <= length(targets))
+		var/obj/machinery/target = targets[next_target++]
+		if(QDELETED(target))
+			continue
+		if(istype(target, /obj/machinery/light))
+			var/obj/machinery/light/fixture = target
+			var/pending = fixture.bridge_startup_pending
+			enable_room(get_area(fixture))
+			if(pending)
+				fixture.bridge_startup_pending = FALSE
+				fixture.seton(fixture.powered())
+				if(fixture.on)
+					fixture.flicker(6, bridge_startup = TRUE)
+					lights_started++
+		else if(istype(target, /obj/machinery/light_switch))
+			var/obj/machinery/light_switch/light_switch = target
+			enable_room(light_switch.connected_area)
+		else if(istype(target, /obj/machinery/alarm))
+			var/obj/machinery/alarm/alarm = target
+			alarm.target_temperature = T20C
+			thermostats_reset++
+		addtimer(CALLBACK(src, /datum/station_wake_sequence/proc/advance), 0.5 SECONDS)
+		return
+	active = FALSE
+	targets.Cut()
+	enabled_rooms.Cut()
+	if(!QDELETED(operator))
+		to_chat(operator, "<span class='notice'>Wake station command complete: [lights_started] lights started and [thermostats_reset] air alarms set to 20°C.</span>")
+	operator = null
+	GLOB.bridge_crew_objectives.check_progress()
 
 /obj/machinery/computer/bridge
 	name = "bridge computer"
@@ -11,14 +152,12 @@
 	var/current_viewing_message = null
 	var/new_sound = 'sound/machines/announce_alarm.ogg'
 	var/new_sound_red = 'sound/machines/announce_alarm_red.ogg'
-	// Next world.time (in deciseconds) when a beacon scan may be initiated again
-	var/next_beacon_scan_time = 0
 
 /obj/machinery/computer/bridge/proc/topic_requires_command_access(var/list/href_list)
 	if(!href_list || !href_list["action"])
 		return FALSE
 	var/action = href_list["action"]
-	return (action in list("wake_station", "printstatus", "checkstationintegrity", "announce", "scan_for_beacons"))
+	return (action in list("wake_station", "printstatus", "checkstationintegrity", "announce", "call_shuttle", "cancel_shuttle"))
 
 /obj/machinery/computer/bridge/Topic(href, href_list, hsrc)
 	if(..())
@@ -28,12 +167,41 @@
 	if(get_dist(src, usr) > 1)
 		return
 	switch(href_list["action"])
+		if("cancel_shuttle")
+			if(!usr.GetAccess(ACCESS_REGION_COMMAND))
+				to_chat(usr, "<span class='warning'>ACCESS DENIED: Command authorization required.</span>")
+				playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1, -2)
+				return
+			if(!SSevac.evacuation_controller || !SSevac.evacuation_controller.can_cancel())
+				to_chat(usr, "<span class='warning'>The escape shuttle is not inbound and cannot be cancelled.</span>")
+				return
+			if(alert(usr, "Are you sure you want to cancel the escape shuttle?", name, "No", "Yes") != "Yes")
+				return
+			if(src.CanUseTopic(usr, GLOB.default_state, href_list) != STATUS_INTERACTIVE || get_dist(src, usr) > 1 || !usr.GetAccess(ACCESS_REGION_COMMAND))
+				return
+			cancel_call_proc(usr)
+			show_menu(usr)
+		if("call_shuttle")
+			if(!usr.GetAccess(ACCESS_REGION_COMMAND))
+				to_chat(usr, "<span class='warning'>ACCESS DENIED: Command authorization required.</span>")
+				playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1, -2)
+				return
+			if(round_duration_in_ticks < 30 MINUTES)
+				to_chat(usr, "<span class='warning'>Escape shuttle requests unlock 30 minutes after shift start.</span>")
+				return
+			if(alert(usr, "Are you sure you want to call the escape shuttle?", name, "No", "Yes") != "Yes")
+				return
+			if(src.CanUseTopic(usr, GLOB.default_state, href_list) != STATUS_INTERACTIVE || get_dist(src, usr) > 1 || !usr.GetAccess(ACCESS_REGION_COMMAND))
+				return
+			call_shuttle_proc(usr)
+			show_menu(usr)
 		if("wake_station")
 			if(topic_requires_command_access(href_list) && !usr.GetAccess(ACCESS_REGION_COMMAND))
 				to_chat(usr, "<span class='warning'>ACCESS DENIED: Command authorization required.</span>")
 				playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1, -2)
 				return
 			wake_station()
+			show_menu(usr)
 		if("printstatus")
 			if(topic_requires_command_access(href_list) && !usr.GetAccess(ACCESS_REGION_COMMAND))
 				to_chat(usr, "<span class='warning'>ACCESS DENIED: Command authorization required.</span>")
@@ -44,46 +212,40 @@
 					return
 				src.audible_message("The computer makes a few noises as it dispenses a piece of paper.")
 				playsound(src, 'sound/machines/dotprinter.ogg', 10, 1)
-				var/obj/item/weapon/paper/R = new(src.loc)
-				var/log_text = "<b>LOG 22-10-2167</b>\n\nREPORT\n\nTHE MUSSR HAS FALLEN DOT\n\nRETURN TO DAILY ACTIVITY DOT\n\n<b>LOG 12-12-2188</b>\n\nCRYOGENIC STORAGE ACCESS DENIED DOT\n\nACTIVATING CONSERVATION MODE DOT\n\n<b>LOG 18-07-2258</b>\n\nISHIM REPUBLIC IN FULL ALERT STATE DOT\n\nREQUESTING HELP DOT\n\n<b>LOG 19-10-2263</b>\n\nTHE DOT STATION DOT IS DOT UNDER DOT TETRACORP DOT COMMAND DOT\n\nACTIVATE DOT CRYOGENIC DOT AWAKENING DOT"
-				// Primary objective: exit reserve mode and restore nominal operations
+				var/obj/item/paper/R = new(src.loc)
 				var/sname = station_name()
-				var/primary_text = "<b>PRIMARY OBJECTIVE: EXIT RESERVE MODE</b>\n\n[sname] is operating under Reserve Mode protocols. Restore nominal station function in the following sequence:" \
-					+ "\n<ol>" \
-					+ "<li>Bring the engine online and stabilize output.</li>" \
-					+ "<li>Set all air alarm thermostats to 20°C across habitable zones.</li>" \
-					+ "<li>Install the portable water control chip and verify flow.</li>" \
-					+ "<li>Initiate food production (hydroponics or galley autosupply).</li>" \
-					+ "<li>Conduct compartment sweep: examine and certify all sections.</li>" \
-					+ "</ol>" \
-					+ "Report completion to Bridge Ops to lift Reserve Mode locks."
-				// Secondary tasking: dynamically assigned mission
-				var/mission_text = generate_random_mission()
-				var/full_text = "[log_text]\n\n<hr>\n[primary_text]\n\n<hr>\n<b>FOLLOW-ON TASKING</b>\n\n[mission_text]"
+				var/full_text = "<b>BRIDGE COMMUNICATIONS REPORT</b>\n\n<b>From:</b> Emergency Operations Relay\n<b>To:</b> [sname] Bridge Operations\n<b>Subject:</b> Reserve-mode service restoration\n\nThe station is running on reserve-mode protocols. External traffic is intermittent; no off-station assignment or rescue operation has been authorized. Restore the services below so local operations can resume.\n\n<b>CREW RECOVERY CONTRACT</b>\n\n<ol><li><b>Wake the station.</b> Use WAKE STATION at this console. The sequence restores bridge-controlled lighting and resets station air-alarm thermostats to 20°C. <b>Reward: 5 Leverage for each eligible crew member.</b></li><li><b>Restore water service.</b> Install the portable water control chip in its holder. <b>Reward: 5 Leverage for each eligible crew member.</b></li><li><b>Stabilize the power grid.</b> Keep at least 90% of station power controllers online for 30 seconds. <b>Reward: 10 Leverage for each eligible crew member.</b></li></ol>\n\nCompletion is verified automatically. Rewards are deposited immediately to living, non-antagonist crew aboard the station when each objective clears. Review STATION STATUS at this console for live contract progress."
+				GLOB.bridge_crew_objectives.issue()
 				R.set_content(full_text)
-				R.name = "Mission Briefing"
+				R.name = "Bridge Recovery Report"
 				var/image/stampoverlay = image('icons/obj/bureaucracy.dmi')
 				stampoverlay.icon_state = "paper_stamp-hos"
-				R.stamped += /obj/item/weapon/stamp
+				R.stamped += /obj/item/stamp
 				R.overlays += stampoverlay
 				R.stamps += "<HR><i>This paper has been stamped as 'Top Secret'.</i>"
 				dispensed = 1
+				show_menu(usr)
 			else
-				to_chat(usr, "<span class='warning'>The printer chirps and jams; no paper detected.</span>")
+				to_chat(usr, "<span class='warning'>Communication logs have already been printed. The printer is unavailable.</span>")
 		if("checkstationintegrity")
 			if(topic_requires_command_access(href_list) && !usr.GetAccess(ACCESS_REGION_COMMAND))
 				to_chat(usr, "<span class='warning'>ACCESS DENIED: Command authorization required.</span>")
 				playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1, -2)
 				return
 			playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1, -2)
-			to_chat(usr, "<span class='warning'></b> &@&# ERR### ARRAY OFFLINE, PL333E CONTACT LOCAL ENGINEERING DEPARTMENT HEAD #$$@%) </span></b>")
+			if(!SSdirector)
+				to_chat(usr, "<span class='warning'>Station telemetry unavailable: AI Director is not initialized.</span>")
+				return
+			var/datum/browser/popup = new(usr, "bridge_station_status", "Station Status", 650, 500)
+			popup.set_content("[GLOB.bridge_crew_objectives.get_status_report()]<hr>[SSdirector.station_status_report()]")
+			popup.open()
 		if("announce")
 			if(topic_requires_command_access(href_list) && !usr.GetAccess(ACCESS_REGION_COMMAND))
 				to_chat(usr, "<span class='warning'>ACCESS DENIED: Command authorization required.</span>")
 				playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1, -2)
 				return
 			if(usr)
-				var/obj/item/weapon/card/id/id_card = usr.GetIdCard()
+				var/obj/item/card/id/id_card = usr.GetIdCard()
 				crew_announcement.announcer = GetNameAndAssignmentFromId(id_card)
 			else
 				crew_announcement.announcer = "Unknown"
@@ -95,7 +257,7 @@
 				return 1
 			if(GLOB.in_character_filter.len)
 				if(findtext(input, config.ic_filter_regex))
-					to_chat(usr, "<span class='warning'>You rethink your decision and decide that Tetracorp will fire you if you announce that.</span>")
+					to_chat(usr, "<span class='warning'>You rethink your decision and decide that Nanotrasen will fire you if you announce that.</span>")
 					return 1
 			var/decl/security_state/security_state = decls_repository.get_decl(GLOB.using_map.security_state)
 			var/decl/security_level/default/df = security_state.current_security_level
@@ -107,87 +269,9 @@
 				announcment_cooldown = 1
 			spawn(6000)//Ten-minute cooldown
 				announcment_cooldown = 0
-		if("scan_for_beacons")
-			if(topic_requires_command_access(href_list) && !usr.GetAccess(ACCESS_REGION_COMMAND))
-				to_chat(usr, "<span class='warning'>ACCESS DENIED: Command authorization required.</span>")
-				playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1, -2)
-				return
-			// If an async generation job is active, show status and do not start a new one
-			if(!ruins_gen_job)
-				var/path = text2path("/datum/ruins_generation_job")
-				if(path)
-					ruins_gen_job = new path
-			if(ruins_gen_job && call(ruins_gen_job, "is_active")())
-				var/pct = call(ruins_gen_job, "get_percent")()
-				to_chat(usr, "<span class='notice'>Deep-space telemetry sweep in progress — [pct]% complete. Stand by.</span>")
-				return
-			// Enforce a 10-minute cooldown between scans
-			var/rem = max(0, next_beacon_scan_time - world.time)
-			if(rem > 0)
-				var/seconds = round(rem/10)
-				var/sec = seconds % 60
-				var/min = (seconds - sec) / 60
-				to_chat(usr, "<span class='warning'>Deep-space telemetry sweep cooldown: [min]m [sec]s remaining.</span>")
-				return
-			// Safety guard: don't allow generation if the Mining shuttle is at Station or in the Ruins area
-			if(SSshuttle && SSshuttle.shuttles && ("Mining" in SSshuttle.shuttles))
-				var/datum/shuttle/S = SSshuttle.shuttles["Mining"]
-				if(istype(S))
-					var/obj/effect/shuttle_landmark/CL = S.current_location
-					if(istype(CL))
-						var/blocked_reason = null
-						if(CL.landmark_tag == "nav_mining_start")
-							blocked_reason = "Mining shuttle is docked at Station. Relocate to open space to initiate sweep"
-						else
-							var/area/A = get_area(CL)
-							if(istype(A, /area/space/ruins))
-								blocked_reason = "Mining shuttle is amid debris field. Relocate to a clear sector to initiate sweep"
-						if(blocked_reason)
-							to_chat(usr, "<span class='warning'>Unable to sweep: [blocked_reason].</span>")
-							return
-
-			// Compute minutes since world boot (fallback if a dedicated round_start_time isn't tracked)
-			playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1)
-			// Prompt for Ruins Profile selection
-			var/list/profile_options = get_ruins_profile_types()
-			var/selected_profile_label = input(usr, "Select sweep parameters:", "Sweep Profile") as null|anything in profile_options
-			if(!selected_profile_label || get_dist(src, usr) > 1)
-				return
-			var/profile_type = profile_options[selected_profile_label]
-			// Start async job instead of generating all at once
-			if(!ruins_gen_job)
-				var/path = text2path("/datum/ruins_generation_job")
-				if(path)
-					ruins_gen_job = new path
-			if(!(ruins_gen_job && call(ruins_gen_job, "start")(profile_type)))
-				to_chat(usr, "<span class='warning'>A deep-space sweep is already underway.</span>")
-				return
-			// Apply 10-minute cooldown (600 seconds => 6000 deciseconds)
-			next_beacon_scan_time = world.time + 6000
-			var/t = 0
-			if(ruins_gen_job)
-				var/list/V = ruins_gen_job:vars
-				if(V && ("total" in V))
-					t = V["total"]
-			to_chat(usr, "<span class='notice'>Initiating deep-space telemetry sweep across [t] sector(s). Profile: [selected_profile_label]. Progress will be reported here.</span>")
-
 /obj/machinery/computer/bridge/proc/wake_station()
-	var/light_switches_enabled = 0
-	var/thermostats_reset = 0
-	for(var/obj/machinery/light_switch/L in world)
-		if(!(L.z in GLOB.using_map.station_levels))
-			continue
-		L.set_state(1)
-		light_switches_enabled++
-
-	for(var/obj/machinery/alarm/A in world)
-		if(!(A.z in GLOB.using_map.station_levels))
-			continue
-		A.target_temperature = T20C
-		thermostats_reset++
-
-	playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1)
-	to_chat(usr, "<span class='notice'>Wake station command complete: [light_switches_enabled] light switches enabled and [thermostats_reset] air alarms set to 20°C.</span>")
+	if(GLOB.station_wake_sequence.start(usr))
+		playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1)
 
 
 /obj/machinery/computer/bridge/attack_hand(mob/living/carbon/human/user)
@@ -198,22 +282,31 @@
 		to_chat(user, "<span class='warning'>ACCESS DENIED: Command authorization required.</span>")
 		playsound(src, 'sound/machines/TERMINAL_DAT.ogg', 10, 1, -2)
 		return
-	var/scan_label = "SWEEP DEEP SPACE"
-	if(!ruins_gen_job)
-		var/path = text2path("/datum/ruins_generation_job")
-		if(path)
-			ruins_gen_job = new path
-	if(ruins_gen_job && call(ruins_gen_job, "is_active")())
-		var/pct = call(ruins_gen_job, "get_percent")()
-		scan_label = "[pct]% - SWEEPING DEEP SPACE"
+	show_menu(user)
+
+/obj/machinery/computer/bridge/proc/show_menu(mob/user)
+	var/menu = "\n<div class='firstdivmood'><div class='compbox'><span class='graytext'>The console sputters to life, offering the following functions:</span>\n<hr>"
+	if(!dispensed)
+		menu += "<span class='feedback'><a href='?src=\ref[src];action=printstatus'>PRINT COMMUNICATION LOGS</a></span>\n"
+	menu += "<span class='feedback'><a href='?src=\ref[src];action=checkstationintegrity'>STATION STATUS</a></span>\n"
+	if(!GLOB.station_wake_sequence.started)
+		menu += "<span class='feedback'><a href='?src=\ref[src];action=wake_station'>WAKE STATION</a></span>\n"
+	var/datum/evacuation_controller/evacuation = SSevac.evacuation_controller
+	if(!evacuation)
+		menu += "<span class='graytext'>ESCAPE SHUTTLE UNAVAILABLE</span>\n"
+	else if(evacuation.is_on_cooldown())
+		menu += "<span class='graytext'>ESCAPE SHUTTLE [evacuation.get_status_panel_eta()] - CALL LOCKED</span>\n"
+	else if(evacuation.can_cancel())
+		menu += "<span class='graytext'>ESCAPE SHUTTLE [evacuation.get_status_panel_eta()]</span>\n"
+		menu += "<span class='feedback'><a href='?src=\ref[src];action=cancel_shuttle'>CANCEL ESCAPE SHUTTLE</a></span>\n"
+	else if(!evacuation.is_idle())
+		menu += "<span class='graytext'>ESCAPE SHUTTLE [evacuation.get_status_panel_eta()]</span>\n"
+	else if(round_duration_in_ticks >= 30 MINUTES)
+		menu += "<span class='feedback'><a href='?src=\ref[src];action=call_shuttle'>CALL ESCAPE SHUTTLE</a></span>\n"
 	else
-		var/rem = max(0, next_beacon_scan_time - world.time)
-		if(rem > 0)
-			var/seconds = round(rem/10)
-			var/sec = seconds % 60
-			var/min = (seconds - sec) / 60
-			scan_label = "COOLDOWN [min]m [sec]s"
-	to_chat(user, "\n<div class='firstdivmood'><div class='compbox'><span class='graytext'>The console sputters to life, offering the following functions:</span>\n<hr><span class='feedback'><a href='?src=\ref[src];action=printstatus;align='right'>PRINT COMMUNICATION LOGS</a></span>\n<span class='feedback'><a href='?src=\ref[src];action=checkstationintegrity;align='right'>STATION STATUS</a></span>\n<span class='feedback'><a href='?src=\ref[src];action=wake_station;align='right'>WAKE STATION</a></span>\n<span class='feedback'><a href='?src=\ref[src];action=announce;align='right'>PRIORITY ANNOUNCEMENT</a></span>\n<span class='feedback'><a href='?src=\ref[src];action=scan_for_beacons;align='right'>[scan_label]</a></span></div></div>")
+		menu += "<span class='graytext'>ESCAPE SHUTTLE LOCKED UNTIL 30 MINUTES AFTER ROUND START</span>\n"
+	menu += "<span class='feedback'><a href='?src=\ref[src];action=announce'>PRIORITY ANNOUNCEMENT</a></span></div></div>"
+	to_chat(user, menu)
 
 // Generate a random mission briefing text for the crew
 /obj/machinery/computer/bridge/proc/generate_random_mission()

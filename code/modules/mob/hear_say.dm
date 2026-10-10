@@ -14,11 +14,11 @@
 	var/turf/T = get_turf(src)
 	if ((T) && (!(isghost(src)))) //Ghosts can hear even in vacuum.
 		var/datum/gas_mixture/environment = T.return_air()
-		var/pressure = (environment)? environment.return_pressure() : 0
-		if(pressure < SOUND_MINIMUM_PRESSURE && get_dist(speaker, src) > 1)
+		var/tile_moles = environment ? environment.get_tile_moles() : 0
+		if(tile_moles < PRESSURE_TO_MOLES(SOUND_MINIMUM_PRESSURE) && get_dist(speaker, src) > 1)
 			return
 
-		if (pressure < ONE_ATMOSPHERE*0.4) //sound distortion pressure, to help clue people in that the air is thin, even if it isn't a vacuum yet
+		if(tile_moles < MOLES_CELLSTANDARD * 0.4)
 			italics = 1
 			sound_vol *= 0.5 //muffle the sound a bit, so it's like we're actually talking through contact
 
@@ -68,11 +68,18 @@
 			else if(!is_blind())
 				to_chat(src, "<span class='name'>[speaker_name]</span>[alt_name] talks but you cannot hear \him.")
 	else
+		if(ishuman(src) && ishuman(speaker) && src != speaker && say_understands(speaker, language))
+			if(!language || !(language.flags & NONVERBAL) || (!is_blind() && speaker in view(src)))
+				var/mob/living/carbon/human/student = src
+				var/mob/living/carbon/human/teacher = speaker
+				if(teacher.teaching_skill)
+					student.ready_to_learn(teacher)
 		if(language)
 			on_hear_say("<span class='game say'><span class='name'>[speaker_name]</span>[alt_name] [track][language.format_message(message, verb)]</span>")
 		else
 			on_hear_say("<span class='game say'><span class='name'>[speaker_name]</span>[alt_name] [track][verb], <span class='message'><span class='body'>\"[message]\"</span></span></span>")
 		runechat_to(src, speaker, message, italics ? (RUNECHAT_ITALIC|RUNECHAT_SMALL) : 0)
+		SStts.queue_speech(speaker, src, message, language, italics)
 		if (speech_sound && (get_dist(speaker, src) <= world.view && src.z == speaker.z))
 			var/turf/source = speaker? get_turf(speaker) : get_turf(src)
 			src.playsound_local(source, speech_sound, sound_vol, 1)
@@ -132,21 +139,24 @@
 	if(vname)
 		speaker_name = vname
 
+	var/radio_full_name = speaker_name
+
 	if(istype(speaker, /mob/living/carbon/human))
 		var/mob/living/carbon/human/H = speaker
 		if(H.voice)
 			speaker_name = H.voice
+		radio_full_name = speaker_name
+		var/list/name_parts = splittext(speaker_name, " ")
+		speaker_name = name_parts[name_parts.len]
 
-		if(H.age && H.gender)//If they have an age and gender
-			var/ageAndGender
-			jobname = H.get_assignment()
-
-			if(H.get_assignment() == "No id")//If they don't have an ID then we don't know their job.
-				jobname = ""
-
-			ageAndGender = ageAndGender2Desc(H.age, H.gender)//Get their age and gender
-
-			speaker_name += " \[" + "[jobname] " + "[ageAndGender]" + "]"//Print it out.
+		jobname = H.get_assignment("", "")
+		if(jobname)
+			var/obj/item/card/id/id = H.get_idcard()
+			var/datum/job/J = id && job_master.GetJob(id.rank)
+			if(J && (J.department_flag & (MED|SCI)))
+				speaker_name = "Dr. [speaker_name] \[[jobname]]"
+			else
+				speaker_name = "[jobname] [speaker_name]"
 
 	if(hard_to_hear)
 		speaker_name = "unknown"
@@ -166,14 +176,14 @@
 
 				if(!I)
 					for(var/mob/living/carbon/human/M in SSmobs.mob_list)
-						if(M.real_name == speaker_name)
+						if(M.real_name == radio_full_name)
 							I = M
 							impersonated[speaker_name] = I
 							break
 
 				// If I's display name is currently different from the voice name and using an agent ID then don't impersonate
 				// as this would allow the AI to track I and realize the mismatch.
-				if(I && !(I.name != speaker_name && I.wear_id && istype(I.wear_id,/obj/item/weapon/card/id/syndicate)))
+				if(I && !(I.name != radio_full_name && I.wear_id && istype(I.wear_id,/obj/item/card/id/syndicate)))
 					impersonating = I
 					jobname = impersonating.get_assignment()
 				else
@@ -201,7 +211,7 @@
 			track = "<a href='byond://?src=\ref[src];trackname=[html_encode(speaker.real_name)];track=\ref[speaker]'>[speaker_name] ([jobname])</a>"
 
 	if(isghost(src))
-		if(speaker_name != speaker.real_name && !isAI(speaker)) //Announce computer and various stuff that broadcasts doesn't use it's real name but AI's can't pretend to be other mobs.
+		if(speaker_name != speaker.real_name && !isAI(speaker) && !ishuman(speaker)) //Announce computer and various stuff that broadcasts doesn't use it's real name but AI's can't pretend to be other mobs.
 			speaker_name = "[speaker.real_name] ([speaker_name])"
 		track = "[speaker_name] ([ghost_follow_link(speaker, src)])"
 	message = add_shout_append(capitalize(message))//So that if they end in an ! it gets bolded
@@ -260,7 +270,7 @@
 		message = "<B>[speaker]</B> [verb][adverb]."
 
 	if(src.status_flags & PASSEMOTES)
-		for(var/obj/item/weapon/holder/H in src.contents)
+		for(var/obj/item/holder/H in src.contents)
 			H.show_message(message)
 		for(var/mob/living/M in src.contents)
 			M.show_message(message)

@@ -1,6 +1,12 @@
+#include "..\modules\director\_defines.dm"
+
 var/list/gamemode_cache = list()
 
 /datum/configuration
+	var/tts_http_url = null
+	var/tts_http_token = null
+	var/tts_max_concurrent_requests = 4
+	var/list/tts_voice_blacklist = list()
 	var/server_name = null				// server name (for world name / status)
 	var/server_suffix = 0				// generate numeric suffix based on server port
 
@@ -124,6 +130,8 @@ var/list/gamemode_cache = list()
 
 	var/welder_vision = 1
 	var/generate_map = 0
+	var/satellite_map = ""
+	var/director_antag_policy = DIRECTOR_ANTAG_POLICY_CREW
 	var/no_click_cooldown = 0
 
 	//Used for modifying movement speed for mobs.
@@ -273,6 +281,14 @@ var/list/gamemode_cache = list()
 
 		if(type == "config")
 			switch (name)
+				if ("tts_http_url")
+					config.tts_http_url = trim(value)
+				if ("tts_http_token")
+					config.tts_http_token = value
+				if ("tts_max_concurrent_requests")
+					config.tts_max_concurrent_requests = clamp(text2num(value), 1, 16)
+				if ("tts_voice_blacklist")
+					config.tts_voice_blacklist = splittext(value, ",")
 				if ("resource_urls")
 					config.resource_urls = splittext(value, " ")
 
@@ -354,6 +370,16 @@ var/list/gamemode_cache = list()
 
 				if ("generate_asteroid")
 					config.generate_map = 1
+
+				if ("satellite_map")
+					config.satellite_map = value
+
+				if ("director_antag_policy")
+					var/policy = lowertext(value)
+					if(policy in list(DIRECTOR_ANTAG_POLICY_GHOSTS, DIRECTOR_ANTAG_POLICY_CREW, DIRECTOR_ANTAG_POLICY_DISABLED))
+						config.director_antag_policy = policy
+					else
+						log_debug("Invalid director_antag_policy '[value]'; using [DIRECTOR_ANTAG_POLICY_CREW].")
 
 				if ("no_click_cooldown")
 					config.no_click_cooldown = 1

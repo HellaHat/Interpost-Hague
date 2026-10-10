@@ -1,6 +1,6 @@
 //Analyzer, pestkillers, weedkillers, nutrients, hatchets, cutters.
 
-/obj/item/weapon/wirecutters/clippers
+/obj/item/wirecutters/clippers
 	name = "plant clippers"
 	desc = "A tool used to take samples from plants."
 
@@ -32,7 +32,7 @@
 	if(!last_data)
 		to_chat(user, "There is no scan data to print.")
 		return
-	var/obj/item/weapon/paper/P = new /obj/item/weapon/paper(get_turf(src))
+	var/obj/item/paper/P = new /obj/item/paper(get_turf(src))
 	P.SetName("paper - [form_title]")
 	P.info = "[last_data]"
 	if(istype(user,/mob/living/carbon/human) && !(user.l_hand && user.r_hand))
@@ -51,9 +51,9 @@
 	var/datum/reagents/grown_reagents
 	if(istype(target,/obj/structure/table))
 		return ..()
-	else if(istype(target,/obj/item/weapon/reagent_containers/food/snacks/grown))
+	else if(istype(target,/obj/item/reagent_containers/food/snacks/grown))
 
-		var/obj/item/weapon/reagent_containers/food/snacks/grown/G = target
+		var/obj/item/reagent_containers/food/snacks/grown/G = target
 		grown_seed = SSplants.seeds[G.plantname]
 		grown_reagents = G.reagents
 
@@ -131,9 +131,9 @@
 	dat += "It thrives in a temperature of [grown_seed.get_trait(TRAIT_IDEAL_HEAT)] Kelvin."
 
 	if(grown_seed.get_trait(TRAIT_LOWKPA_TOLERANCE) < 20)
-		dat += "<br>It is well adapted to low pressure levels."
+		dat += "<br>It is well adapted to sparse atmospheres."
 	if(grown_seed.get_trait(TRAIT_HIGHKPA_TOLERANCE) > 220)
-		dat += "<br>It is well adapted to high pressure levels."
+		dat += "<br>It is well adapted to dense atmospheres."
 
 	if(grown_seed.get_trait(TRAIT_HEAT_TOLERANCE) > 30)
 		dat += "<br>It is well adapted to a range of temperatures."

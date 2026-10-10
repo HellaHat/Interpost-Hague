@@ -657,6 +657,7 @@ var/global/floorIsLava = 0
 
 /datum/admins/proc/Secrets(var/datum/admin_secret_category/active_category = null)
 	if(!check_rights(0))	return
+	admin_secrets.populate_random_events()
 
 	// Print the header with category selection buttons.
 	var/dat = "<B>The first rule of adminbuse is: you don't talk about the adminbuse.</B><HR>"
@@ -800,6 +801,35 @@ var/global/floorIsLava = 0
 	log_and_message_admins("toggled supermatter safemode ([GLOB.smsafemode ? "on" : "off"]).")
 	SSstatistics.add_field_details("admin_verb","TSMSAFE") //If you are copy-pasting this, ensure the 2nd parameter is unique to the new proc
 
+/datum/admins/proc/toggle_role_debug_mode()
+	set category = "Server"
+	set desc = "Toggles inter-round persistent role debug mode (rounds can start without a Captain)"
+	set name = "Toggle Role Debug Mode"
+
+	if(!check_rights(R_ADMIN))
+		return
+
+	GLOB.role_debug_mode = !GLOB.role_debug_mode
+	world.save_role_debug_mode(GLOB.role_debug_mode)
+	log_and_message_admins("toggled role debug mode ([GLOB.role_debug_mode ? "on" : "off"]).")
+	SSstatistics.add_field_details("admin_verb","TROLEDEBUG")
+
+/datum/admins/proc/toggle_tts()
+	set category = "Server"
+	set name = "Toggle Text To Speech"
+	set desc = "Enable or disable chat TTS across rounds and server restarts."
+
+	if(!check_rights(R_ADMIN))
+		return
+	GLOB.tts_enabled = !GLOB.tts_enabled
+	world.save_tts_enabled()
+	if(!GLOB.tts_enabled)
+		SStts.clear_queue()
+	else if(!SStts.backend_url())
+		to_chat(usr, "<span class='warning'>TTS is enabled, but no backend is configured. Start the bundled TTS service and set tts_http_url in config/config.txt.</span>")
+	log_and_message_admins("toggled text to speech ([GLOB.tts_enabled ? "on" : "off"]).")
+	SSstatistics.add_field_details("admin_verb", "TCHATTS")
+
 /datum/admins/proc/toggleoocdead()
 	set category = "Server"
 	set desc="Toggle Dead OOC."
@@ -837,6 +867,38 @@ var/global/floorIsLava = 0
 	log_admin("[key_name(usr)] toggled Traitor Scaling to [config.traitor_scaling].")
 	message_admins("[key_name_admin(usr)] toggled Traitor Scaling [config.traitor_scaling ? "on" : "off"].", 1)
 	SSstatistics.add_field_details("admin_verb","TTS") //If you are copy-pasting this, ensure the 2nd parameter is unique to the new proc!
+
+/datum/admins/proc/antagonist_config()
+	set category = "Server"
+	set name = "Antagonist Configuration"
+	set desc = "Enable or disable antagonist roles for automatic and non-admin assignment."
+
+	if(!check_rights(R_ADMIN))
+		return
+
+	while(TRUE)
+		var/list/antag_options = list()
+		for(var/role_id in GLOB.all_antag_types_)
+			var/datum/antagonist/role_datum = GLOB.all_antag_types_[role_id]
+			if(role_datum)
+				antag_options["[role_datum.role_text] ([role_datum.id]) - [is_antagonist_enabled(role_id) ? "Enabled" : "Disabled"]"] = role_id
+		antag_options["Done"] = "DONE"
+
+		var/choice = input("Select an antagonist role to toggle.", "Antagonist Configuration") as null|anything in antag_options
+		if(!choice || choice == "Done")
+			return
+
+		var/selected_role_id = antag_options[choice]
+		var/datum/antagonist/selected_role = GLOB.all_antag_types_[selected_role_id]
+		if(!selected_role)
+			continue
+
+		if(is_antagonist_enabled(selected_role_id))
+			GLOB.enabled_antag_types -= selected_role_id
+			log_and_message_admins("disabled the [selected_role.role_text] antagonist role.")
+		else
+			GLOB.enabled_antag_types |= selected_role_id
+			log_and_message_admins("enabled the [selected_role.role_text] antagonist role.")
 
 /datum/admins/proc/startnow()
 	set category = "Server"
@@ -1534,7 +1596,7 @@ var/global/floorIsLava = 0
 
 			var/replyorigin = input(src.owner, "Please specify who the fax is coming from", "Origin") as text|null
 
-			var/obj/item/weapon/paper/admin/P = new /obj/item/weapon/paper/admin( null ) //hopefully the null loc won't cause trouble for us
+			var/obj/item/paper/admin/P = new /obj/item/paper/admin( null ) //hopefully the null loc won't cause trouble for us
 			faxreply = P
 
 			P.admindatum = src
@@ -1544,9 +1606,9 @@ var/global/floorIsLava = 0
 			P.adminbrowse()
 
 
-datum/admins/var/obj/item/weapon/paper/admin/faxreply // var to hold fax replies in
+datum/admins/var/obj/item/paper/admin/faxreply // var to hold fax replies in
 
-/datum/admins/proc/faxCallback(var/obj/item/weapon/paper/admin/P, var/obj/machinery/photocopier/faxmachine/destination)
+/datum/admins/proc/faxCallback(var/obj/item/paper/admin/P, var/obj/machinery/photocopier/faxmachine/destination)
 	var/customname = input(src.owner, "Pick a title for the report", "Title") as text|null
 
 	P.SetName("[P.origin] - [customname]")
@@ -1578,7 +1640,7 @@ datum/admins/var/obj/item/weapon/paper/admin/faxreply // var to hold fax replies
 
 		if(!P.stamped)
 			P.stamped = new
-		P.stamped += /obj/item/weapon/stamp/centcomm
+		P.stamped += /obj/item/stamp/centcomm
 		P.overlays += stampoverlay
 
 	var/obj/item/rcvdcopy

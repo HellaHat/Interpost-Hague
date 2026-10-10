@@ -231,7 +231,7 @@
 					C.hallucination(round(dist * 1.5), dist)
 
 	// Effect 2: Z-level wide electrical pulse
-	for(var/obj/machinery/power/apc/A in SSmachines.machinery)
+	for(var/obj/machinery/power/area_smes/A in SSmachines.machinery)
 		if(!(A.z in affected_z))
 			continue
 
@@ -374,7 +374,7 @@
 		damage = max(0, damage + between(-DAMAGE_RATE_LIMIT, (removed.temperature - CRITICAL_TEMPERATURE) / 150, damage_inc_limit))
 
 		//Ok, 100% oxygen atmosphere = best reaction
-		//Maxes out at 100% oxygen pressure
+		//Maxes out at 100% oxygen concentration
 		oxygen = clamp((removed.get_by_flag(XGM_GAS_OXIDIZER) - (removed.gas["nitrogen"] * NITROGEN_RETARDATION_FACTOR)) / removed.total_moles, 0, 1)
 
 		//calculate power gain for oxygen reaction
@@ -469,10 +469,10 @@
 
 	if(!env)
 		data["ambient_temp"] = 0
-		data["ambient_pressure"] = 0
+		data["ambient_moles"] = 0
 	else
 		data["ambient_temp"] = round(env.temperature)
-		data["ambient_pressure"] = round(env.return_pressure())
+		data["ambient_moles"] = round(env.get_tile_moles(), 0.1)
 	data["detonating"] = grav_pulling
 	data["energy"] = power
 
@@ -485,7 +485,7 @@
 
 
 /obj/machinery/power/supermatter/attackby(obj/item/weapon/W as obj, mob/living/user as mob)
-	if(istype(W, /obj/item/weapon/tape_roll))
+	if(istype(W, /obj/item/tape_roll))
 		to_chat(user, "You repair some of the damage to \the [src] with \the [W].")
 		damage = max(damage -10, 0)
 

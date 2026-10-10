@@ -1,6 +1,9 @@
 // Dynamic State-Machine Framework – Tension & Catalyst System
 // Defines and constants for the AI Director Engine
 
+#ifndef DIRECTOR_DEFINES
+#define DIRECTOR_DEFINES
+
 // Tension meter thresholds (0-100 scale)
 #define TENSION_CALM        20
 #define TENSION_RISING      40
@@ -36,6 +39,7 @@
 #define CATALYST_BIOHAZARD         "biohazard"
 #define CATALYST_LEECH             "leech"
 #define CATALYST_EPICUREAN         "epicurean"
+#define CATALYST_CARGO_INCURSION   "cargo_incursion"
 
 // Squad doctrine roles
 #define SQUAD_ROLE_LEADER          "leader"
@@ -63,8 +67,17 @@
 
 // Cooldowns (in ticks / deciseconds)
 #define DIRECTOR_EVAL_INTERVAL     30 SECONDS
+#define DIRECTOR_STARTER_DELAY     5 MINUTES
+#define DIRECTOR_LEECH_REVIVAL_DELAY 1 MINUTE
 #define CATALYST_COOLDOWN          5 MINUTES
 #define TELEMETRY_SAMPLE_INTERVAL  10 SECONDS
+#define DIRECTOR_BEAT_COOLDOWN     2 MINUTES
+#define DIRECTOR_ARC_CONTINUITY_BONUS 40
+#define DIRECTOR_ARC_HISTORY_LIMIT 5
+#define DIRECTOR_ARC_MIN_BEATS     2
+#define DIRECTOR_ANTAG_POLICY_GHOSTS "ghosts"
+#define DIRECTOR_ANTAG_POLICY_CREW "crew"
+#define DIRECTOR_ANTAG_POLICY_DISABLED "disabled"
 
 // Minimum antagonist presence maintenance
 #define ANTAG_STALE_THRESHOLD      15 MINUTES // How long an antagonist can go without a hostile action before being replaced
@@ -76,3 +89,5 @@
 #define DIRECTOR_MAX_ROUND_DURATION 2 HOURS
 #define DIRECTOR_IMPATIENCE_START   20 MINUTES
 #define DIRECTOR_MAX_TIME_PRESSURE  40
+
+#endif

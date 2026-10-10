@@ -38,11 +38,11 @@
 	requirments =  list("NORTH" = /obj/item/clothing/glasses/sunglasses/,
 						"EAST" = /obj/item/weapon/flame/candle/,
 						"WEST" = /obj/item/weapon/flame/candle/,
-						"SOUTH" = /obj/item/weapon/paper)
+						"SOUTH" = /obj/item/paper)
 	old_god = MESSIAH
 
 	spell_effect(var/mob/living/user, var/list/spell_components)
-		var/obj/item/weapon/paper/target1_paper = spell_components["SOUTH"]
+		var/obj/item/paper/target1_paper = spell_components["SOUTH"]
 		var/mob/living/carbon/human/target = get_player_from_paper(target1_paper)
 		if(!target)	return 0
 		to_chat(target, "<span class='danger'>Your eyes burn horrificly!</span>")
@@ -51,7 +51,17 @@
 			playsound(target.loc, 'sound/effects/messiah_choir.ogg', 50, 1, -1)
 			target.disabilities &= ~BLIND
 			to_chat(target, "<span class='danger'>You blink rapidly as scales fall from your eyes. You realize you've been following a false god. Jes is the true Messiah!</span>")
-			target.religion = GLOB.all_religions[MESSIAH]
+			var/datum/antagonist/cultist/cult = get_cult(target)
+			if(cult)
+				cult.remove_antagonist(target.mind, TRUE)
+			var/datum/religion/previous_faith = GLOB.all_religions[target.religion]
+			if(previous_faith && target.mind)
+				previous_faith.followers -= target.mind.name
+			target.religion = MESSIAH
+			if(target.mind)
+				target.mind.religion = MESSIAH
+				var/datum/religion/faith = GLOB.all_religions[MESSIAH]
+				faith.followers |= target.mind.name
 			target.verbs += /mob/living/proc/make_shrine
 			target.verbs += /mob/living/proc/praise_god
 			target.verbs.Remove(/mob/living/proc/recite_prayer)
@@ -61,12 +71,12 @@
 	requirments =  list("NORTH" = /obj/item/weapon/flame/candle/,
 						"SOUTHEAST" = /obj/item/weapon/flame/candle/,
 						"SOUTHWEST" = /obj/item/weapon/flame/candle/,
-						"SOUTH" = /obj/item/weapon/wirecutters)
+						"SOUTH" = /obj/item/wirecutters)
 	old_god = MESSIAH
 
 	spell_effect(var/mob/living/user, var/list/spell_components)
 		var/datum/action/uncuff_action = new/datum/action/uncuff
-		uncuff_action.target = new/obj/item/weapon/implant/freedom()
+		uncuff_action.target = new/obj/item/implant/freedom()
 		uncuff_action.Grant(user)
 		spawn(1500)
 			uncuff_action.Remove(user)

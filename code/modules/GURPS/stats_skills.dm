@@ -30,10 +30,8 @@
 #endif
 #define CRIT_FAILURE 3
 
-
-
 /mob
-	var/list/stats = list(st = 10, dx = 10, iq = 10, ht = 10)
+	var/list/stats = list(st = 10, dx = 10, iq = 10, ht = 10, per = 10)
 	var/list/skills = list("melee" = 0, "ranged" = 0, "medical" = 0, "surgery" = 0, "engineering" = 0, "crafting" = 0, "cooking" = 0, "science" = 0, "cleaning" = 0, "gardening" = 0, "mining" = 0)
 
 /mob/proc/sin_stat_modifier(var/stat)
@@ -96,6 +94,22 @@
 		if(message)
 			to_chat(src, "<span class = 'warning'>[message]</span>")
 		return 0
+
+/mob/proc/is_perception_exempt()
+	return isobserver(src) || issilicon(src)
+
+/mob/proc/perception_check()
+	if(is_perception_exempt())
+		return TRUE
+	var/chance = (stats[STAT_PER] - PERCEPTION_STAT_FLOOR) * PERCEPTION_CHANCE_PER_POINT
+	chance += (mood_stat() + fatigue_stat()) * PERCEPTION_CHANCE_PER_MOD
+	return prob(Clamp(chance, PERCEPTION_CHANCE_MIN, PERCEPTION_CHANCE_MAX))
+
+/mob/proc/perception_opposed(mob/actor)
+	if(is_perception_exempt())
+		return TRUE
+	var/chance = PERCEPTION_OPPOSED_BASE + (stats[STAT_PER] - actor.stats[STAT_DX]) * PERCEPTION_OPPOSED_PER_POINT
+	return prob(Clamp(chance, PERCEPTION_CHANCE_MIN, PERCEPTION_CHANCE_MAX))
 
 /mob/proc/learn_stats(var/stat_type)
 	var/initial_stat = round(stats[stat_type])
@@ -160,6 +174,9 @@ proc/stat_to_modifier(var/stat)
 proc/strToDamageModifier(var/strength)
 	return strength * 0.1  //This is better then division
 
+/mob/proc/combat_strength()
+	return max(stats[STAT_ST] - (c_intent == I_WEAK ? 1 : 0), 0)
+
 proc/strToSpeedModifier(var/strength, var/w_class)//
 	switch(strength)
 		if(1 to 5)
@@ -182,7 +199,23 @@ proc/conToToxinModifier(var/constitution, var/w_class)
 	return stat_to_modifier(constitution) * 0.05
 
 //Stats helpers.
+/mob/living/carbon/proc/update_species_stats(var/apply = TRUE)
+	return
+
+/mob/living/carbon/human
+	var/list/applied_species_stats = list()
+
+/mob/living/carbon/human/update_species_stats(var/apply = TRUE)
+	for(var/stat in applied_species_stats)
+		stats[stat] -= applied_species_stats[stat]
+	applied_species_stats = list()
+	if(apply && species)
+		for(var/stat in species.stat_modifiers)
+			stats[stat] += species.stat_modifiers[stat]
+			applied_species_stats[stat] = species.stat_modifiers[stat]
+
 /mob/living/carbon/proc/add_stats(var/stre, var/dexe, var/inti, var/cons)//To make adding stats quicker.
+	update_species_stats(FALSE)
 	if(stre)
 		stats[STAT_ST] = stre
 	if(dexe)
@@ -191,10 +224,12 @@ proc/conToToxinModifier(var/constitution, var/w_class)
 		stats[STAT_IQ] = inti
 	if(cons)
 		stats[STAT_HT] = cons
+	update_species_stats()
 
 //Different way of generating stats.  Takes a "main_stat" argument.
 // Totals top 3 D6 for stats.  Then puts the top stat in the "main_stat" and the rest randomly
 /mob/living/carbon/proc/generate_stats(var/main_stat)
+	update_species_stats(FALSE)
 	var/list/rand_stats = list()
 	var/top_stat = 0
 	//Roll a new random roll for each stat
@@ -209,8 +244,10 @@ proc/conToToxinModifier(var/constitution, var/w_class)
 	for(var/stat in stats - main_stat)
 		stats[stat] = pick(rand_stats)
 		rand_stats.Remove(stats[stat])
+	update_species_stats()
 
-/mob/living/carbon/proc/newgeneratestats(var/stre1, var/stre2, var/dext1, var/dext2, var/int1, var/int2, var/helt1, var/helt2)
+/mob/living/carbon/proc/newgeneratestats(var/stre1, var/stre2, var/dext1, var/dext2, var/int1, var/int2, var/helt1, var/helt2, var/per1 = 7, var/per2 = 13)
+	update_species_stats(FALSE)
 	stats[STAT_ST] = rand(stre1, stre2)
 	if(has_quirk(/datum/quirk/weak))
 		stats[STAT_ST] -= 2
@@ -225,10 +262,12 @@ proc/conToToxinModifier(var/constitution, var/w_class)
 		stats[STAT_DX] += (rand(1,2))
 	stats[STAT_IQ] = rand(int1, int2)
 	stats[STAT_HT] = rand(helt1, helt2)
+	stats[STAT_PER] = rand(per1, per2)
 	for(var/stat in stats)
 		stats[stat] += src.sin_stat_modifier(stat) + src.virtue_stat_modifier(stat)
 	if(gender == FEMALE)
 		stats[STAT_HT] -= (rand(1,2))
+	update_species_stats()
 
 /mob/living/carbon/proc/adjustStrength(var/num)
 	stats[STAT_ST] += num
@@ -261,6 +300,7 @@ proc/conToToxinModifier(var/constitution, var/w_class)
 	bandage this patient?  I think this rule is adhered to mostly already in the doe.
 */
 /mob
+	var/attack_quality
 	//This is getting long fuuuucckk
 
 	//crit shit
@@ -297,6 +337,47 @@ proc/conToToxinModifier(var/constitution, var/w_class)
 				return CRIT_FAILURE
 			return 0
 
+/mob/proc/skillcheck_margin(var/skill, var/skill_type = null)
+	skill += sin_skill_modifier(skill_type) + virtue_skill_modifier(skill_type)
+	var/effective_skill = clamp(round((skill + mood_stat()) / 5), 1, 20)
+	return effective_skill - (rand(1, 6) + rand(1, 6) + rand(1, 6))
+
+/mob/living/proc/gurps_melee_attack_check(mob/living/target)
+	if(!target)
+		return FALSE
+
+	var/attack_margin = skillcheck_margin(skills[SKILL_MELEE], SKILL_MELEE)
+	if(attack_margin < 0)
+		visible_message("<span class='danger'>\The [src] misses [target] with a melee attack!</span>")
+		return FALSE
+
+	if(target.gurps_melee_defense_check(src, attack_margin))
+		visible_message("<span class='notice'>[target] evades [src]'s melee attack!</span>")
+		return FALSE
+	return TRUE
+
+/mob/living/proc/gurps_melee_defense_check(mob/living/attacker, var/attack_margin)
+	if(!canmove || lying || buckled || incapacitated())
+		return FALSE
+	var/defense_margin = skillcheck_margin(skills[SKILL_MELEE], SKILL_MELEE)
+	return defense_margin > attack_margin
+
+/mob/proc/attack_quality_from_margin(var/margin, var/hit)
+	if(hit)
+		if(margin >= 10)
+			return "powerfully"
+		if(margin >= 5)
+			return "solidly"
+		if(margin >= 1)
+			return "cleanly"
+		return "weakly"
+	if(margin >= -4)
+		return "narrowly"
+	if(margin >= -9)
+		return "poorly"
+	else
+		return "wildly"
+
 /mob/proc/learn_skills(var/skill_type)
 	var/initial_skill = round(skills[skill_type])
 	if(skills[skill_type] < 30 && stat_to_modifier(stats[STAT_IQ]) >= 0) //the minimum for reading
@@ -310,6 +391,89 @@ proc/conToToxinModifier(var/constitution, var/w_class)
 		to_chat(src,"You feel like live you've gained new insights.")
 
 //Skill helpers.
+/mob/living/carbon/human
+	var/teaching_skill
+	var/teaching_power = 0
+	var/list/prepare_learn = list()
+	var/list/learning_collector = list()
+
+/mob/living/carbon/human/verb/teach_others()
+	set name = "Teach"
+	set category = "IC"
+
+	if(stat || sleeping || !mind || teaching_skill)
+		return
+	var/list/available_skills = list()
+	for(var/skill in skills)
+		if(skills[skill] > 0)
+			available_skills += skill
+	if(!length(available_skills))
+		to_chat(src, SPAN_WARNING("You have no skills to teach."))
+		return
+	var/skill = input(src, "Which skill do you want to teach?", "Teach") as null|anything in available_skills
+	if(!skill)
+		return
+	var/lesson = sanitize(input(src, "What do you want to explain?", "Teach") as null|message)
+	lesson = trim(lesson)
+	if(!length(lesson) || stat || sleeping || !mind || teaching_skill || skills[skill] <= 0)
+		return
+	if(copytext(lesson, 1, 2) in list("*", "^", ";", ":", "."))
+		to_chat(src, SPAN_WARNING("Explain the lesson aloud, without a speech prefix."))
+		return
+	teaching_skill = skill
+	teaching_power = round(length(lesson) / 20)
+	say(lesson)
+	teaching_skill = null
+	teaching_power = 0
+
+/mob/living/carbon/human/proc/ready_to_learn(mob/living/carbon/human/teacher)
+	if(stat || sleeping || !mind || !teacher.teaching_skill || !(teacher in view(3, src)))
+		return
+	var/skill = teacher.teaching_skill
+	if(!(skill in skills) || skills[skill] >= 70 || skills[skill] >= teacher.skills[skill])
+		return
+	for(var/key in prepare_learn.Copy())
+		var/list/offer = prepare_learn[key]
+		if(offer["expires"] <= world.time)
+			prepare_learn.Remove(key)
+	var/key = "\ref[teacher]-[skill]"
+	prepare_learn[key] = list("skill" = skill, "teacher" = teacher, "power" = teacher.teaching_power, "expires" = world.time + 5 SECONDS)
+	to_chat(src, SPAN_NOTICE("[teacher] is explaining [skill]. Nod to study the lesson."))
+
+/mob/living/carbon/human/proc/accept_lessons()
+	var/list/offers = prepare_learn
+	prepare_learn = list()
+	if(stat || sleeping || !mind || is_deaf())
+		return
+	for(var/key in offers)
+		var/list/offer = offers[key]
+		var/mob/living/carbon/human/teacher = offer["teacher"]
+		if(offer["expires"] <= world.time || QDELETED(teacher) || teacher.stat || teacher.sleeping || !(teacher in view(3, src)))
+			continue
+		learn_from_teacher(offer["skill"], teacher, offer["power"])
+
+/mob/living/carbon/human/proc/learn_from_teacher(skill, mob/living/carbon/human/teacher, lesson_power)
+	if(!(skill in skills) || skills[skill] >= 70 || skills[skill] >= teacher.skills[skill])
+		return
+	var/skill_level = max(1, skills[skill] / 10)
+	var/dice = rand(1, 6) + rand(1, 6) + rand(1, 6)
+	var/margin = stats[STAT_IQ] + lesson_power - dice
+	var/critical_success = dice <= 4
+	if(dice >= 17 || (!critical_success && margin < 0))
+		to_chat(src, SPAN_WARNING("The lesson is difficult to understand."))
+		return
+	var/progress = max(1, margin + lesson_power - skill_level) + max(1, teacher.skills[skill] - skills[skill])
+	if(skill == SKILL_MELEE || skill == SKILL_RANGE)
+		progress = max(1, round(progress / 2))
+	if(critical_success)
+		progress *= 2
+	learning_collector[skill] += progress
+	to_chat(src, SPAN_NOTICE("You understand the lesson about [skill]."))
+	if(learning_collector[skill] >= 20 * skill_level)
+		skills[skill] = min(skills[skill] + 10, 70, teacher.skills[skill])
+		learning_collector[skill] = 0
+		to_chat(src, SPAN_NOTICE("You have learned more about [skill]!"))
+
 /mob/proc/skillnumtodesc(var/skill)
 	switch(skill)
 		if(0)

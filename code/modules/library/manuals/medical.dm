@@ -1,4 +1,4 @@
-/obj/item/weapon/book/manual/medical_cloning
+/obj/item/book/manual/medical_cloning
 	name = "Cloning Techniques of the 26th Century"
 	icon_state ="bookCloning"
 	author = "Medical Journal, volume 3"		 // Who wrote the thing, can be changed by pen or PC. It is not automatically assigned
@@ -49,7 +49,7 @@
 
 				<a name='4'><h3>Step 4: Scan body</h3>
 				Go onto the computer and scan the body by pressing 'Scan - &lt;Subject Name Here&gt;.' If you're successful, they will be added to the records (note that this can be done at any time, even with living people,
-				so that they can be cloned without a body in the event that they are lying dead on port solars and didn't turn on their suit sensors)!
+				so that they can be cloned without a body in the event that they are lying dead on port solars and aren't wearing an active medical bracelet)!
 				If not, and it says "Error: Mental interface failure.", then they have left their bodily confines and are one with the spirits. If this happens, just shout at them to get back in their body,
 				click 'Refresh' and try scanning them again. If there's no success, threaten them with gibbing.
 				Still no success? Skip over to Step 7 and don't continue after it, as you have an unresponsive body and it cannot be cloned.
@@ -90,14 +90,14 @@
 				</html>
 				"}
 
-/obj/item/weapon/book/manual/medical_diagnostics_manual
+/obj/item/book/manual/medical_diagnostics_manual
 	name = "Medical Diagnostics Manual"
 	desc = "First, do no harm. A detailed medical practitioner's guide."
 	icon_state = "bookMedical"
 	author = "Medical Department"
 	title = "Medical Diagnostics Manual"
 
-/obj/item/weapon/book/manual/medical_diagnostics_manual/New()
+/obj/item/book/manual/medical_diagnostics_manual/New()
 	..()
 	dat = {"<html>
 				<head>

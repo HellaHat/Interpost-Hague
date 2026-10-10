@@ -136,8 +136,10 @@
 /obj/effect/overmap/sector/exoplanet/proc/adapt_seed(var/datum/seed/S)
 	S.set_trait(TRAIT_IDEAL_HEAT,          atmosphere.temperature + rand(-5,5),800,70)
 	S.set_trait(TRAIT_HEAT_TOLERANCE,      S.get_trait(TRAIT_HEAT_TOLERANCE) + rand(-5,5),800,70)
-	S.set_trait(TRAIT_LOWKPA_TOLERANCE,    atmosphere.return_pressure() + rand(-5,-50),80,0)
-	S.set_trait(TRAIT_HIGHKPA_TOLERANCE,   atmosphere.return_pressure() + rand(5,50),500,110)
+	// Seed tolerance traits retain their legacy configured units.
+	var/atmosphere_amount = atmosphere.get_tile_moles() * ONE_ATMOSPHERE / MOLES_CELLSTANDARD
+	S.set_trait(TRAIT_LOWKPA_TOLERANCE,    atmosphere_amount + rand(-5,-50),80,0)
+	S.set_trait(TRAIT_HIGHKPA_TOLERANCE,   atmosphere_amount + rand(5,50),500,110)
 	if(S.exude_gasses)
 		S.exude_gasses -= badgas
 	if(S.consume_gasses)
@@ -432,7 +434,7 @@
 	..()
 
 /turf/simulated/floor/exoplanet/attackby(obj/item/C, mob/user)
-	if(diggable && istype(C,/obj/item/weapon/shovel))
+	if(diggable && istype(C,/obj/item/shovel))
 		visible_message("<span class='notice'>\The [user] starts digging \the [src]</span>")
 		if(do_after(user, 50))
 			to_chat(user,"<span class='notice'>You dig a deep pit.</span>")

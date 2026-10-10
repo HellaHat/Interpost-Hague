@@ -47,6 +47,10 @@
 #define MODE_WIZARD "wizard"
 #define MODE_CHANGELING "changeling"
 #define MODE_CULTIST "cultist"
+#define MODE_CULTIST_ASCENDED "cultist_ascended"
+#define MODE_CULTIST_FIRE "cultist_fire"
+#define MODE_CULTIST_DEATH "cultist_death"
+#define MODE_HERETIC "heretic"
 #define MODE_MONKEY "monkey"
 #define MODE_RENEGADE "renegade"
 #define MODE_REVOLUTIONARY "revolutionary"
@@ -57,6 +61,7 @@
 #define MODE_GODCULTIST "god cultist"
 #define MODE_CRUSADE "crusader"
 #define MODE_DELVER "delver"
+#define MODE_LOGOMANCER "logomancer"
 
 #define DEFAULT_TELECRYSTAL_AMOUNT 100
 #define IMPLANT_TELECRYSTAL_AMOUNT(x) (round(x * 0.49)) // If this cost is ever greater than half of DEFAULT_TELECRYSTAL_AMOUNT then it is possible to buy more TC than you spend

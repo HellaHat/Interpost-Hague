@@ -39,7 +39,7 @@
 
 	//the values in this list show how much damage will pass through, not how much will be absorbed.
 	var/list/damage_absorption = list("brute"=0.8,"fire"=1.2,"bullet"=0.9,"laser"=1,"energy"=1,"bomb"=1)
-	var/obj/item/weapon/cell/cell
+	var/obj/item/cell/cell
 	var/state = 0
 	var/list/log = new
 	var/last_message = 0
@@ -172,7 +172,7 @@
 	return internal_tank
 
 /obj/mecha/proc/add_cell()
-	cell = new /obj/item/weapon/cell/mecha(src)
+	cell = new /obj/item/cell/mecha(src)
 
 /obj/mecha/proc/add_cabin()
 	cabin_air = new
@@ -722,7 +722,7 @@
 				to_chat(user, "You were unable to attach [W] to [src]")
 		return
 
-	var/obj/item/weapon/card/id/id_card = W.GetIdCard()
+	var/obj/item/card/id/id_card = W.GetIdCard()
 	if(id_card)
 		if(add_req_access || maint_access)
 			if(internals_access_allowed(usr))
@@ -784,7 +784,7 @@
 				src.log_message("Eject attempt made using maintenance controls - rejected.")
 		return
 
-	else if(istype(W, /obj/item/weapon/cell))
+	else if(istype(W, /obj/item/cell))
 		if(state==4)
 			if(!src.cell)
 				to_chat(user, "You install the powercell")
@@ -797,7 +797,7 @@
 		return
 
 	else if(isWelder(W) && user.a_intent != I_HURT)
-		var/obj/item/weapon/weldingtool/WT = W
+		var/obj/item/weldingtool/WT = W
 		if (WT.remove_fuel(0,user))
 			if (hasInternalDamage(MECHA_INT_TANK_BREACH))
 				clearInternalDamage(MECHA_INT_TANK_BREACH)
@@ -870,14 +870,7 @@
 	return get_turf_air()
 
 /obj/mecha/proc/return_pressure()
-	. = 0
-	if(use_internal_tank)
-		. =  cabin_air.return_pressure()
-	else
-		var/datum/gas_mixture/t_air = get_turf_air()
-		if(t_air)
-			. = t_air.return_pressure()
-	return
+	return cabin_air.return_pressure()
 
 //skytodo: //No idea what you want me to do here, mate.
 /obj/mecha/proc/return_temperature()
@@ -1118,27 +1111,6 @@
 		I.forceMove(loc)
 	dropped_items.Cut()
 	if(mob_container.forceMove(src.loc))//ejecting mob container
-	/*
-		if(ishuman(occupant) && (return_pressure() > HAZARD_HIGH_PRESSURE))
-			use_internal_tank = 0
-			var/datum/gas_mixture/environment = get_turf_air()
-			if(environment)
-				var/env_pressure = environment.return_pressure()
-				var/pressure_delta = (cabin.return_pressure() - env_pressure)
-		//Can not have a pressure delta that would cause environment pressure > tank pressure
-
-				var/transfer_moles = 0
-				if(pressure_delta > 0)
-					transfer_moles = pressure_delta*environment.volume/(cabin.return_temperature() * R_IDEAL_GAS_EQUATION)
-
-			//Actually transfer the gas
-					var/datum/gas_mixture/removed = cabin.air_contents.remove(transfer_moles)
-					loc.assume_air(removed)
-
-			occupant.SetStunned(5)
-			occupant.SetWeakened(5)
-			to_chat(occupant, "You were blown out of the mech!")
-	*/
 		src.log_message("[mob_container] moved out.")
 		occupant.reset_view()
 		/*
@@ -1177,7 +1149,7 @@
 	return 0
 
 
-/obj/mecha/check_access(obj/item/weapon/card/id/I, list/access_list)
+/obj/mecha/check_access(obj/item/card/id/I, list/access_list)
 	if(!istype(access_list))
 		return 1
 	if(!access_list.len) //no requirements
@@ -1260,7 +1232,7 @@
 		if(hasInternalDamage(intdamflag))
 			output += dam_reports[tflag]
 			output += "<br />"
-	if(return_pressure() > WARNING_HIGH_PRESSURE)
+	if(use_internal_tank && return_pressure() > WARNING_HIGH_PRESSURE)
 		output += "<font color='red'><b>DANGEROUSLY HIGH CABIN PRESSURE</b></font><br />"
 	return output
 
@@ -1271,6 +1243,8 @@
 	var/tank_pressure = internal_tank ? round(internal_tank.return_pressure(),0.01) : "None"
 	var/tank_temperature = internal_tank ? internal_tank.return_temperature() : "Unknown" //Results in type mismatch if there is no tank.
 	var/cabin_pressure = round(return_pressure(),0.01)
+	var/datum/gas_mixture/environment = get_turf_air()
+	var/air_reading = use_internal_tank ? "<b>Cabin pressure: </b>[cabin_pressure > WARNING_HIGH_PRESSURE ? "<font color='red'>[cabin_pressure]</font>" : cabin_pressure]kPa" : "<b>Ambient gas amount: </b>[environment ? round(environment.get_tile_moles(), 0.1) : 0] mol/tile"
 	var/output = {"[report_internal_damage()]
 						[integrity<30?"<font color='red'><b>DAMAGE LEVEL CRITICAL</b></font><br>":null]
 						<b>Integrity: </b> [integrity]%<br>
@@ -1278,7 +1252,7 @@
 						<b>Air source: </b>[use_internal_tank?"Internal Airtank":"Environment"]<br>
 						<b>Airtank pressure: </b>[tank_pressure]kPa<br>
 						<b>Airtank temperature: </b>[tank_temperature]K|[isnum_safe(tank_temperature) ? "tank_temperature - T0C&deg;C" : ""]<br>
-						<b>Cabin pressure: </b>[cabin_pressure>WARNING_HIGH_PRESSURE ? "<font color='red'>[cabin_pressure]</font>": cabin_pressure]kPa<br>
+						[air_reading]<br>
 						<b>Cabin temperature: </b> [return_temperature()]K|[return_temperature() - T0C]&deg;C<br>
 						<b>Lights: </b>[lights?"on":"off"]<br>
 						[src.dna?"<b>DNA-locked:</b><br> <span style='font-size:10px;letter-spacing:-1px;'>[src.dna]</span> \[<a href='?src=\ref[src];reset_dna=1'>Reset</a>\]<br>":null]
@@ -1357,7 +1331,7 @@
 	return output
 
 
-/obj/mecha/proc/output_access_dialog(obj/item/weapon/card/id/id_card, mob/user)
+/obj/mecha/proc/output_access_dialog(obj/item/card/id/id_card, mob/user)
 	if(!id_card || !user) return
 	var/output = {"<html>
 						<head><style>
@@ -1382,7 +1356,7 @@
 	onclose(user, "exosuit_add_access")
 	return
 
-/obj/mecha/proc/output_maintenance_dialog(obj/item/weapon/card/id/id_card,mob/user)
+/obj/mecha/proc/output_maintenance_dialog(obj/item/card/id/id_card,mob/user)
 	if(!id_card || !user) return
 
 	var/maint_options = "<a href='?src=\ref[src];set_internal_tank_valve=1;user=\ref[user]'>Set Cabin Air Pressure</a>"
@@ -1758,9 +1732,7 @@
 			else if(pressure_delta < 0) //cabin pressure higher than release pressure
 				var/datum/gas_mixture/t_air = mecha.get_turf_air()
 				pressure_delta = cabin_pressure - release_pressure
-				if(t_air)
-					pressure_delta = min(cabin_pressure - t_air.return_pressure(), pressure_delta)
-				if(pressure_delta > 0) //if location pressure is lower than cabin pressure
+				if(pressure_delta > 0)
 					transfer_moles = pressure_delta*cabin_air.volume/(cabin_air.temperature * R_IDEAL_GAS_EQUATION)
 					var/datum/gas_mixture/removed = cabin_air.remove(transfer_moles)
 					if(t_air)

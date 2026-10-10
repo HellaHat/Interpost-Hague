@@ -7,6 +7,117 @@
  */
 
 
+GLOBAL_DATUM_INIT(cryo_startup_effect, /datum/cryo_startup_effect, new)
+
+/datum/cryo_startup_effect
+	var/active = FALSE
+	var/started = FALSE
+	var/end_time = 0
+	var/intensity = 0.15
+	var/alarm_channel = 7
+	var/pulse_timer
+	var/stop_timer
+	var/next_sound_update = 0
+	var/list/rooms = list()
+	var/list/fixtures = list()
+	var/list/listeners = list()
+
+/datum/cryo_startup_effect/proc/start()
+	if(started)
+		return
+	started = TRUE
+	end_time = round_start_time + 5 MINUTES
+	if(world.time >= end_time)
+		return
+	for(var/obj/machinery/cryopod/pod in world)
+		var/area/room = get_area(pod)
+		if(!room || istype(room, /area/crew_quarters/captain) || istype(room, /area/crew_quarters/heads/hop))
+			continue
+		rooms |= room
+	if(!length(rooms))
+		return
+	active = TRUE
+	for(var/area/room in rooms)
+		room.set_lightswitch(TRUE)
+		for(var/obj/machinery/light/fixture in room)
+			fixtures |= fixture
+	stop_timer = addtimer(CALLBACK(src, /datum/cryo_startup_effect/proc/stop), end_time - world.time, TIMER_STOPPABLE)
+	pulse()
+
+/datum/cryo_startup_effect/proc/affects(var/obj/machinery/light/fixture)
+	return active && world.time < end_time && (get_area(fixture) in rooms)
+
+/datum/cryo_startup_effect/proc/register_light(var/obj/machinery/light/fixture)
+	if(affects(fixture))
+		fixtures |= fixture
+
+/datum/cryo_startup_effect/proc/unregister_light(var/obj/machinery/light/fixture)
+	fixtures -= fixture
+
+/datum/cryo_startup_effect/proc/pulse()
+	pulse_timer = null
+	if(!active)
+		return
+	if(world.time >= end_time)
+		stop()
+		return
+	var/phase = ((world.time - round_start_time) % (10 SECONDS)) / (10 SECONDS)
+	intensity = 0.15 + 0.85 * (1 - cos(phase * 360)) / 2
+	for(var/obj/machinery/light/fixture in fixtures.Copy())
+		if(QDELETED(fixture))
+			fixtures -= fixture
+		else
+			fixture.refresh_light_emission()
+	if(world.time >= next_sound_update)
+		update_alarm()
+		next_sound_update = world.time + 1 SECOND
+	pulse_timer = addtimer(CALLBACK(src, /datum/cryo_startup_effect/proc/pulse), 0.2 SECONDS, TIMER_STOPPABLE)
+
+/datum/cryo_startup_effect/proc/update_alarm()
+	var/list/current_listeners = list()
+	for(var/client/listener in GLOB.clients)
+		var/turf/location = get_turf(listener.mob)
+		if(!location || !isStationLevel(location.z) || istype(listener.mob, /mob/new_player))
+			continue
+		var/mob/living/living_listener = listener.mob
+		if(istype(living_listener) && ((living_listener.sdisabilities & DEAF) || living_listener.ear_deaf))
+			continue
+		current_listeners += listener
+	for(var/client/listener in listeners - current_listeners)
+		if(listener in GLOB.clients)
+			sound_to(listener, sound(null, channel = alarm_channel))
+	for(var/client/listener in current_listeners)
+		var/alarm_playing = FALSE
+		for(var/sound/playing_sound in listener.SoundQuery())
+			if(playing_sound.channel == alarm_channel)
+				alarm_playing = TRUE
+				break
+		if(!alarm_playing)
+			sound_to(listener, sound('sound/ambience/CRYOLARM.ogg', repeat = TRUE, wait = FALSE, volume = 100, channel = alarm_channel))
+	listeners = current_listeners
+
+/datum/cryo_startup_effect/proc/stop()
+	active = FALSE
+	if(pulse_timer)
+		deltimer(pulse_timer)
+		pulse_timer = null
+	if(stop_timer)
+		deltimer(stop_timer)
+		stop_timer = null
+	for(var/client/listener in listeners)
+		if(listener in GLOB.clients)
+			sound_to(listener, sound(null, channel = alarm_channel))
+	listeners.Cut()
+	for(var/obj/machinery/light/fixture in fixtures)
+		if(!QDELETED(fixture))
+			fixture.refresh_light_emission()
+	fixtures.Cut()
+	rooms.Cut()
+
+/datum/cryo_startup_effect/Destroy()
+	stop()
+	return ..()
+
 //Main cryopod console.
 
 /obj/machinery/computer/cryopod
@@ -14,7 +125,7 @@
 	desc = "An interface between crew and the cryogenic storage oversight systems."
 	icon = 'icons/obj/Cryogenic2.dmi'
 	icon_state = "cellconsole"
-	circuit = /obj/item/weapon/circuitboard/cryopodcontrol
+	circuit = /obj/item/circuitboard/cryopodcontrol
 	density = 0
 	interact_offline = 1
 	var/mode = null
@@ -39,7 +150,7 @@
 	desc = "An interface between crew and the robotic storage systems."
 	icon = 'icons/obj/robot_storage.dmi'
 	icon_state = "console"
-	circuit = /obj/item/weapon/circuitboard/robotstoragecontrol
+	circuit = /obj/item/circuitboard/robotstoragecontrol
 
 	storage_type = "cyborgs"
 	storage_name = "Robotic Storage Control"
@@ -201,12 +312,12 @@
 
 	attack_hand(user)
 
-/obj/item/weapon/circuitboard/cryopodcontrol
+/obj/item/circuitboard/cryopodcontrol
 	name = "Circuit board (Cryogenic Oversight Console)"
 	build_path = /obj/machinery/computer/cryopod
 	origin_tech = list(TECH_DATA = 3)
 
-/obj/item/weapon/circuitboard/robotstoragecontrol
+/obj/item/circuitboard/robotstoragecontrol
 	name = "Circuit board (Robotic Storage Console)"
 	build_path = /obj/machinery/computer/cryopod/robot
 	origin_tech = list(TECH_DATA = 3)
@@ -225,14 +336,22 @@
 /obj/machinery/cryopod
 	name = "cryogenic freezer"
 	desc = "A man-sized pod for entering suspended animation."
-	icon = 'icons/obj/Cryogenic2.dmi'
-	icon_state = "cryochamber0"
+	icon = 'icons/obj/machines/os13.dmi'
+	icon_state = "cryochamber1" // Map editor preview; replaced by the layered visuals at runtime.
 	density = 1
 	anchored = 1
 	dir = WEST
 
 	var/base_icon_state = "cryochamber0"
-	var/occupied_icon_state = "cryochamber3"
+	var/occupied_icon_state = "cryochamber1"
+	// Builds the pod from layered parts with the occupant visible through the lid windows.
+	var/layered_visuals = TRUE
+	var/atom/movable/cryopod_visual/occupant_visual
+	var/atom/movable/cryopod_visual/lid_visual
+	var/lid_closed = FALSE
+	var/releasing = FALSE // Lid is opening; the occupant is let out once the animation ends.
+	var/last_occupant_appearance
+	var/last_visual_dir
 	var/on_store_message = "has entered long-term storage."
 	var/on_store_name = "Cryogenic Oversight"
 	var/on_enter_occupant_message = "You feel cool air surround you. You go numb as your senses turn inward."
@@ -240,6 +359,7 @@
 	var/disallow_occupant_types = list()
 
 	var/mob/occupant = null       // Person waiting to be despawned.
+	var/issue_joiner_access_card = FALSE
 	var/time_till_despawn = 9000  // Down to 15 minutes //30 minutes-ish is too long
 	var/time_entered = 0          // Used to keep track of the safe period.
 	var/obj/item/device/radio/intercom/announce //
@@ -253,17 +373,17 @@
 	var/list/preserve_items = list(
 		/obj/item/integrated_circuit/manipulation/bluespace_rift,
 		/obj/item/integrated_circuit/input/teleporter_locator,
-		/obj/item/weapon/card/id/captains_spare,
-		/obj/item/weapon/aicard,
+		/obj/item/card/id/captains_spare,
+		/obj/item/aicard,
 		/obj/item/device/mmi,
 		/obj/item/device/paicard,
 		/obj/item/weapon/gun,
-		/obj/item/weapon/pinpointer,
+		/obj/item/pinpointer,
 		/obj/item/clothing/suit,
 		/obj/item/clothing/shoes/magboots,
 		/obj/item/blueprints,
 		/obj/item/clothing/head/helmet/space,
-		/obj/item/weapon/storage/internal
+		/obj/item/storage/internal
 	)
 
 /obj/machinery/cryopod/robot
@@ -273,6 +393,7 @@
 	icon_state = "pod_0"
 	base_icon_state = "pod_0"
 	occupied_icon_state = "pod_1"
+	layered_visuals = FALSE
 	on_store_message = "has entered robotic storage."
 	on_store_name = "Robotic Storage Oversight"
 	on_enter_occupant_message = "The storage unit broadcasts a sleep signal to you. Your systems start to shut down, and you enter low-power mode."
@@ -285,9 +406,11 @@
 	desc = "A man-sized pod for entering suspended animation. Dubbed 'cryocoffin' by more cynical spacers, it is pretty barebone, counting on stasis system to keep the victim alive rather than packing extended supply of food or air. Can be ordered with symbols of common religious denominations to be used in space funerals too."
 	on_store_name = "Life Pod Oversight"
 	time_till_despawn = 20 MINUTES
+	icon = 'icons/obj/Cryogenic2.dmi'
 	icon_state = "redpod0"
 	base_icon_state = "redpod0"
 	occupied_icon_state = "redpod1"
+	layered_visuals = FALSE
 	var/launched = 0
 	var/datum/gas_mixture/airtank
 
@@ -340,11 +463,124 @@
 /obj/machinery/cryopod/Destroy()
 	if(occupant)
 		occupant.forceMove(loc)
+	remove_layered_visuals()
 	return ..()
 
 /obj/machinery/cryopod/Initialize()
 	. = ..()
 	find_control_computer()
+	if(layered_visuals)
+		setup_layered_visuals()
+	update_icon()
+
+/atom/movable/cryopod_visual
+	name = ""
+	mouse_opacity = 0
+	anchored = TRUE
+	simulated = FALSE
+	appearance_flags = PIXEL_SCALE | KEEP_TOGETHER
+
+GLOBAL_LIST_EMPTY(cryopod_occupant_masks)
+
+/obj/machinery/cryopod/proc/setup_layered_visuals()
+	icon = initial(icon)
+	icon_state = base_icon_state
+	appearance_flags |= KEEP_TOGETHER
+
+	occupant_visual = new
+	occupant_visual.vis_flags = VIS_INHERIT_PLANE
+	occupant_visual.layer = layer + 0.001
+	occupant_visual.dir = SOUTH
+
+	lid_visual = new
+	lid_visual.vis_flags = VIS_INHERIT_PLANE | VIS_INHERIT_DIR
+	lid_visual.layer = layer + 0.002
+	lid_visual.icon = icon
+	lid_visual.icon_state = "cryopod_open"
+	lid_visual.underlays += image(icon, "cryochamber0c")
+
+	vis_contents += occupant_visual
+	vis_contents += lid_visual
+	lid_closed = FALSE
+
+/obj/machinery/cryopod/proc/remove_layered_visuals()
+	if(occupant_visual)
+		vis_contents -= occupant_visual
+		QDEL_NULL(occupant_visual)
+	if(lid_visual)
+		vis_contents -= lid_visual
+		QDEL_NULL(lid_visual)
+	last_occupant_appearance = null
+
+/obj/machinery/cryopod/update_icon(var/instant = FALSE)
+	if(!layered_visuals || !lid_visual)
+		icon_state = occupant ? occupied_icon_state : base_icon_state
+		return
+
+	icon_state = base_icon_state
+	refresh_occupant_visual()
+
+	var/should_close = (occupant && !releasing) ? TRUE : FALSE
+	if(should_close == lid_closed)
+		return
+	lid_closed = should_close
+	lid_visual.icon_state = lid_closed ? "cryochamber1" : "cryopod_open"
+	if(!instant)
+		flick(lid_closed ? "cryopod_closing" : "cryopod_opening", lid_visual)
+
+// Shows a copy of the occupant lying at 45 degrees inside the pod, clipped to the pod's silhouette.
+/obj/machinery/cryopod/proc/refresh_occupant_visual(var/force = FALSE)
+	if(!occupant_visual)
+		return
+	if(!occupant || occupant.invisibility)
+		if(last_occupant_appearance)
+			occupant_visual.overlays.Cut()
+			last_occupant_appearance = null
+		return
+	if(!force && occupant.appearance == last_occupant_appearance && dir == last_visual_dir)
+		return
+	last_occupant_appearance = occupant.appearance
+	last_visual_dir = dir
+
+	// The SOUTH/WEST sprites put the headrest at the upper left; NORTH/EAST mirror it.
+	var/mirrored = (dir == NORTH || dir == EAST)
+	var/matrix/M = matrix()
+	M.Scale(0.8)
+	M.Turn(mirrored ? 45 : -45)
+	M.Translate(mirrored ? -2 : 2, 0)
+
+	var/mutable_appearance/MA = new(occupant)
+	MA.name = ""
+	MA.plane = FLOAT_PLANE
+	MA.layer = FLOAT_LAYER
+	MA.dir = SOUTH
+	MA.mouse_opacity = 0
+	MA.invisibility = 0
+	MA.render_target = null
+	MA.filters = null
+	MA.appearance_flags = PIXEL_SCALE | KEEP_TOGETHER
+	MA.pixel_x = 0
+	MA.pixel_y = 0
+	MA.transform = M
+	// Overlays on their own planes (glows, emissives) would escape the mask and render above the lid.
+	var/list/kept_overlays = list()
+	for(var/overlay in MA.overlays)
+		var/mutable_appearance/O = overlay
+		if(O.plane == FLOAT_PLANE || O.plane == DEFAULT_PLANE)
+			kept_overlays += overlay
+	MA.overlays = kept_overlays
+
+	occupant_visual.overlays.Cut()
+	occupant_visual.overlays += MA
+	occupant_visual.filters = filter(type = "alpha", icon = get_cryopod_occupant_mask(icon, dir))
+
+/proc/get_cryopod_occupant_mask(var/mask_icon, var/mask_dir)
+	var/key = "[mask_icon]-[mask_dir]"
+	var/icon/mask = GLOB.cryopod_occupant_masks[key]
+	if(!mask)
+		mask = icon(mask_icon, "cryochamber0", mask_dir)
+		GLOB.cryopod_occupant_masks[key] = mask
+	return mask
 
 /obj/machinery/cryopod/proc/find_control_computer(urgent=0)
 	// Workaround for http://www.byond.com/forum/?post=2007448
@@ -379,6 +615,11 @@
 //Lifted from Unity stasis.dm and refactored. ~Zuhayr
 /obj/machinery/cryopod/Process()
 	if(occupant)
+		// Keep the visible occupant in sync with clothing/damage changes (e.g. latejoiners still being equipped).
+		refresh_occupant_visual()
+
+		if(releasing)
+			return
 
 		//Allow a ten minute gap between entering the pod and actually despawning.
 		if(world.time - time_entered < time_till_despawn)
@@ -416,7 +657,7 @@
 
 		if(W.contents.len) //Make sure we catch anything not handled by qdel() on the items.
 			for(var/obj/item/O in W.contents)
-				if(istype(O,/obj/item/weapon/storage/internal)) //Stop eating pockets, you fuck!
+				if(istype(O,/obj/item/storage/internal)) //Stop eating pockets, you fuck!
 					continue
 				O.forceMove(src)
 
@@ -473,8 +714,6 @@
 	if(R)
 		qdel(R)
 
-	icon_state = base_icon_state
-
 	//TODO: Check objectives/mode, update new targets if this mob is the target, spawn new antags?
 
 
@@ -515,7 +754,7 @@
 			return
 
 		var/willing = null //We don't want to allow people to be forced into despawning.
-		var/mob/M = G:affecting
+		var/mob/M = grab.affecting
 
 		if(M.client)
 			if(alert(M,"Would you like to enter long-term storage?",,"Yes","No") == "Yes")
@@ -558,7 +797,7 @@
 	for(var/obj/item/W in items)
 		W.forceMove(get_turf(src))
 	src.go_out()
-	icon_state = base_icon_state
+	update_icon()
 	add_fingerprint(usr)
 
 	SetName("[name]")
@@ -573,7 +812,7 @@
 	for(var/obj/item/W in items)
 		W.forceMove(get_turf(src))
 	src.go_out()
-	icon_state = base_icon_state
+	update_icon()
 	add_fingerprint(usr)
 
 	SetName("[name]")
@@ -621,16 +860,8 @@
 		playsound(src, 'sound/machines/button11.ogg', 40)
 		return
 
-	if(do_after(usr, 30, src))
-		if(occupant.client)
-			occupant.client.eye = src.occupant.client.mob
-			occupant.client.perspective = MOB_PERSPECTIVE
-
-		occupant.forceMove(get_turf(src))
-		playsound(src, 'sound/machines/cryoexit.ogg', 40)
-		set_occupant(null)
-
-		icon_state = base_icon_state
+	if(do_after(usr, 30, src) && occupant)
+		start_release()
 
 	return
 
@@ -640,22 +871,78 @@
 		playsound(src, 'sound/machines/button11.ogg', 40)
 		return
 
+	start_release()
+
+	return
+
+#define CRYOPOD_LID_OPEN_TIME 5 // Total frame delay of the "cryopod_opening" state.
+
+// Opens the lid and only lets the occupant out once the opening animation has finished.
+/obj/machinery/cryopod/proc/start_release()
+	if(releasing || !occupant)
+		return
+	playsound(src, 'sound/machines/cryoexit.ogg', 40)
+	if(!layered_visuals || !lid_visual || !lid_closed)
+		release_occupant()
+		return
+	releasing = TRUE
+	lid_closed = FALSE
+	lid_visual.icon_state = "cryopod_open"
+	flick("cryopod_opening", lid_visual)
+	addtimer(CALLBACK(src, /obj/machinery/cryopod/proc/release_occupant), CRYOPOD_LID_OPEN_TIME)
+
+#undef CRYOPOD_LID_OPEN_TIME
+
+/obj/machinery/cryopod/proc/release_occupant()
+	releasing = FALSE
+	if(QDELETED(src))
+		return
+	if(!occupant)
+		update_icon()
+		return
+
 	if(occupant.client)
 		occupant.client.eye = src.occupant.client.mob
 		occupant.client.perspective = MOB_PERSPECTIVE
 
 	occupant.forceMove(get_turf(src))
-	playsound(src, 'sound/machines/cryoexit.ogg', 40)
+	occupant.resting = TRUE
+	occupant.update_canmove()
+	occupant.fatigue = occupant.max_fatigue
+	if(isliving(occupant))
+		var/mob/living/released_occupant = occupant
+		released_occupant.update_stamina_hud()
+		released_occupant.fade_cryo_filter_effect()
+	if(issue_joiner_access_card && ishuman(occupant))
+		dispense_joiner_access_card(occupant)
 	set_occupant(null)
 
-	icon_state = base_icon_state
+/obj/machinery/cryopod/proc/dispense_joiner_access_card(var/mob/living/carbon/human/joiner)
+	var/datum/job/job = job_master.GetJob(joiner.job)
+	if(!job)
+		WARNING("Cryopod could not issue an access card for [joiner.real_name], job [joiner.job].")
+		to_chat(joiner, "<span class='warning'>The cryopod could not determine your role and failed to dispense a temporary access card. Please contact an administrator.</span>")
+		return
 
-	return
+	var/obj/item/card/id/cryo_temporary/card = new(get_turf(src))
+	card.rank = job.title
+	card.assignment = (joiner.mind && joiner.mind.role_alt_title) ? joiner.mind.role_alt_title : job.title
+	card.access = job.get_access()
+	joiner.set_id_info(card)
+	card.add_fingerprint(joiner)
+	if(!joiner.equip_to_slot_if_possible(card, slot_wear_id, disable_warning = TRUE))
+		if(!joiner.put_in_hands(card))
+			card.forceMove(get_turf(src))
+			to_chat(joiner, "<span class='notice'>Your temporary access card falls onto the floor beside the cryopod.</span>")
+	to_chat(joiner, "<span class='notice'>The cryopod dispenses a temporary access card for your role: [card.assignment]. It is dissolving in the air and will disappear in three minutes.</span>")
 
-/obj/machinery/cryopod/proc/set_occupant(var/mob/living/carbon/occupant)
+// instant: show the pod already closed instead of animating the lid (e.g. latejoiners spawning inside).
+/obj/machinery/cryopod/proc/set_occupant(var/mob/living/carbon/occupant, var/instant = FALSE, var/joining = FALSE)
 	src.occupant = occupant
+	issue_joiner_access_card = occupant && joining
 	if(!occupant)
 		SetName(initial(name))
+		update_icon()
 		return
 
 	occupant.stop_pulling()
@@ -669,4 +956,4 @@
 		SetName("[name] ([occupant])")
 	else
 		SetName("[name]")
-	icon_state = occupied_icon_state
+	update_icon(instant)

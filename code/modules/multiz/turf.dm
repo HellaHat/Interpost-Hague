@@ -34,6 +34,96 @@
 
 	z_flags = ZM_MIMIC_DEFAULTS | ZM_MIMIC_OVERWRITE | ZM_MIMIC_NO_AO | ZM_ALLOW_ATMOS
 
+/turf/simulated/open/crawlspace
+	name = "crawlspace"
+	icon = 'icons/turf/flooring/newmaintenance.dmi'
+	icon_state = "hh"
+	// Keep the crawlspace sprite instead of replacing it with the turf below.
+	z_flags = ZM_MIMIC_DEFAULTS | ZM_MIMIC_NO_AO
+
+/turf/simulated/open/crawlspace/CanZPass(atom/A, direction)
+	if(z == A.z)
+		return direction == UP
+	if(direction == DOWN)
+		return !density
+	return FALSE
+
+/turf/simulated/open/crawlspace/is_open()
+	return FALSE
+
+/turf/simulated/open/crawlspace/maintenance
+	name = "wired crawlspace"
+	icon_state = "hub"
+
+/turf/simulated/open/crawlspace/maintenance/Initialize()
+	. = ..()
+	update_icon()
+	for(var/direction in GLOB.cardinal)
+		var/turf/simulated/open/crawlspace/maintenance/C = get_step(src, direction)
+		if(istype(C))
+			C.update_icon()
+
+/turf/simulated/open/crawlspace/maintenance/update_icon()
+	var/connections = 0
+	for(var/direction in GLOB.cardinal)
+		if(istype(get_step(src, direction), /turf/simulated/open/crawlspace/maintenance))
+			connections |= direction
+
+	dir = SOUTH
+	switch(connections)
+		if(NORTH, SOUTH, NORTH | SOUTH)
+			icon_state = "vertical"
+		if(EAST, WEST, EAST | WEST)
+			icon_state = "horizontal"
+		if(NORTH | EAST)
+			icon_state = "ne"
+		if(NORTH | WEST)
+			icon_state = "nw"
+		if(SOUTH | EAST)
+			icon_state = "se"
+		if(SOUTH | WEST)
+			icon_state = "sw"
+		if(NORTH | SOUTH | EAST)
+			icon_state = "nse"
+		if(NORTH | SOUTH | WEST)
+			icon_state = "nsw"
+		if(NORTH | EAST | WEST)
+			icon_state = "nwe"
+		if(SOUTH | EAST | WEST)
+			icon_state = "swe"
+		else
+			icon_state = "hub"
+	..()
+
+/turf/simulated/open/crawlspace/hatch
+	name = "hatch crawlspace"
+	icon_state = ""
+
+/turf/simulated/open/crawlspace/panel
+	name = "panel crawlspace"
+	icon_state = "hhh"
+
+/turf/simulated/open/crawlspace/panel/plain
+	icon_state = "h2"
+
+/turf/simulated/open/crawlspace/panel/directional
+	icon_state = "h"
+
+/turf/simulated/open/crawlspace/CanPass(atom/movable/mover, turf/target, height=1.5, air_group=0)
+	if(ismob(mover))
+		var/mob/M = mover
+		if(!M.lying)
+			return FALSE
+	return ..()
+
+/turf/simulated/open/crawlspace/Enter(atom/movable/mover as mob|obj, atom/forget as mob|obj|turf|area)
+	if(ismob(mover))
+		var/mob/M = mover
+		if(!M.lying)
+			to_chat(M, SPAN_WARNING("You need to be crawling to move into [src]."))
+			return FALSE
+	return ..()
+
 /turf/simulated/open/update_dirt()
 	return 0
 
@@ -87,12 +177,6 @@
 			return
 		else
 			to_chat(user, "<span class='warning'>The plating is going to need some support.</span>")
-
-	//To lay cable.
-	if(isCoil(C))
-		var/obj/item/stack/cable_coil/coil = C
-		coil.turf_place(src, user)
-		return
 
 	for(var/atom/movable/M in below)
 		if(M.movable_flags & MOVABLE_FLAG_Z_INTERACT)

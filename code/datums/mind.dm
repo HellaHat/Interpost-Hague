@@ -52,7 +52,7 @@
 
 	var/has_been_rev = 0//Tracks if this mind has been a rev or not
 
-	var/datum/faction/faction 			//associated faction
+	var/primary_allegiance = "nanotrasen" // Political alignment; independent from roles and combat factions.
 	var/datum/changeling/changeling		//changeling holder
 
 	var/rev_cooldown = 0
@@ -73,6 +73,9 @@
 
 	var/prayer
 	var/religion
+	var/religion_before_cult
+	var/faction_before_cult
+	var/religion_antagonist_rolled = FALSE
 	var/list/initial_email_login = list("login" = "", "password" = "")
 
 /datum/mind/proc/add_active_antagonist(var/datum/antagonist/antag)
@@ -81,10 +84,13 @@
 
 /datum/mind/proc/remove_active_antagonist(var/datum/antagonist/antag)
 	if(antag)
-		active_antagonists -= antag
+		if(antag in active_antagonists)
+			active_antagonists -= antag
+			if(current)
+				current.updatePig()
 
 /datum/mind/proc/has_active_antagonist(var/datum/antagonist/antag)
-	return antag && antag in active_antagonists
+	return antag && (antag in active_antagonists)
 
 /datum/mind/New(var/key)
 	src.key = key
@@ -96,6 +102,11 @@
 	. = ..()
 
 /datum/mind/proc/transfer_to(mob/living/new_character)
+	var/mob/living/old_character = current
+	var/datum/antagonist/cultist/cult = get_cult(current)
+	var/datum/heretic_devotee/heretic = get_heretic(current)
+	if(heretic)
+		heretic.unbind_body(old_character)
 	if(!istype(new_character))
 		world.log << "## DEBUG: transfer_to(): Some idiot has tried to transfer_to() a non mob/living mob. Please inform Carn"
 	if(current)					//remove ourself from our old body's mind variable
@@ -116,6 +127,14 @@
 
 	if(changeling)
 		new_character.make_changeling()
+
+	if(cult)
+		cult.transfer_cult_body(old_character, new_character)
+	if(heretic)
+		heretic.bind_body(new_character)
+		old_character.religion = heretic.previous_religion
+		old_character.faction = heretic.previous_faction
+		old_character.update_religion_magic()
 
 	if(active)
 		new_character.key = key		//now transfer the key to link the client to our new body
@@ -429,7 +448,7 @@
 
 		switch(href_list["implant"])
 			if("remove")
-				for(var/obj/item/weapon/implant/loyalty/I in H.contents)
+				for(var/obj/item/implant/loyalty/I in H.contents)
 					for(var/obj/item/organ/external/organs in H.organs)
 						if(I in organs.implants)
 							qdel(I)
@@ -531,7 +550,7 @@
 	var/is_currently_brigged = 0
 	if(istype(T.loc,/area/security/brig))
 		is_currently_brigged = 1
-		for(var/obj/item/weapon/card/id/card in current)
+		for(var/obj/item/card/id/card in current)
 			is_currently_brigged = 0
 			break // if they still have ID they're not brigged
 		for(var/obj/item/device/pda/P in current)

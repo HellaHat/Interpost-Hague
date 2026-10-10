@@ -2,6 +2,9 @@
 "a" = (
 /turf/space,
 /area/space)
+"." = (
+/turf/simulated/floor/airless,
+/area/space)
 "g" = (
 /obj/structure/grille,
 /turf/simulated/floor/airless,
@@ -15,18 +18,18 @@
 /area/space)
 
 (1,1,1) = {"
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
+a
+a
+a
+a
+a
+a
+a
+a
+a
+a
+a
+a
 "}
 (2,1,1) = {"
 a

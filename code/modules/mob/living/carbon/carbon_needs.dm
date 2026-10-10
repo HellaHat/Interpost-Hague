@@ -1,4 +1,7 @@
 /mob/living/carbon/proc/print_happiness(var/mob/living/carbon/human/H)
+	if(H.is_leech())
+		to_chat(src, "<span class='info'>I am always happy. [H.leech_is_hungry() ? "I hunger and thirst for blood." : "My thirst for blood is satisfied."]</span>")
+		return
 	var/msg = "\n<div class='firstdiv'><div class='box'>"
 	msg += "<span class='info'>I am a follower of </span><font color='red'>[religion]</font>.\n"
 	msg += "<span class='info'>I still remember my name, it's </span><font color='green'>[real_name].</font>\n"
@@ -38,6 +41,12 @@
 	var/last_positive_concept_spawn = 0
 
 /mob/living/carbon/proc/update_happiness()
+	if(mind?.is_leech())
+		happiness = MOOD_LEVEL_HAPPY4 + 1
+		crit_mood_modifier = 0
+		if(happiness_icon)
+			happiness_icon.icon_state = "pressure-1"
+		return
 	var/old_happiness = happiness
 	var/old_icon = null
 	if(happiness_icon)
@@ -50,39 +59,39 @@
 	switch(happiness)
 		if(-5000000 to MOOD_LEVEL_SAD4)
 			if(happiness_icon)
-				happiness_icon.icon_state = "mood7"
+				happiness_icon.icon_state = "pressure11"
 
 		if(MOOD_LEVEL_SAD4 to MOOD_LEVEL_SAD3)
 			if(happiness_icon)
-				happiness_icon.icon_state = "mood6"
+				happiness_icon.icon_state = "pressure10"
 
 		if(MOOD_LEVEL_SAD3 to MOOD_LEVEL_SAD2)
 			if(happiness_icon)
-				happiness_icon.icon_state = "mood5"
+				happiness_icon.icon_state = "pressure8"
 
 		if(MOOD_LEVEL_SAD2 to MOOD_LEVEL_SAD1)
 			if(happiness_icon)
-				happiness_icon.icon_state = "mood5"
+				happiness_icon.icon_state = "pressure8"
 
 		if(MOOD_LEVEL_SAD1 to MOOD_LEVEL_HAPPY1)
 			if(happiness_icon)
-				happiness_icon.icon_state = "mood4"
+				happiness_icon.icon_state = "pressure6"
 
 		if(MOOD_LEVEL_HAPPY1 to MOOD_LEVEL_HAPPY2)
 			if(happiness_icon)
-				happiness_icon.icon_state = "mood4"
+				happiness_icon.icon_state = "pressure6"
 
 		if(MOOD_LEVEL_HAPPY2 to MOOD_LEVEL_HAPPY3)
 			if(happiness_icon)
-				happiness_icon.icon_state = "mood3"
+				happiness_icon.icon_state = "pressure4"
 
 		if(MOOD_LEVEL_HAPPY3 to MOOD_LEVEL_HAPPY4)
 			if(happiness_icon)
-				happiness_icon.icon_state = "mood2"
+				happiness_icon.icon_state = "pressure2"
 
 		if(MOOD_LEVEL_HAPPY4 to INFINITY)
 			if(happiness_icon)
-				happiness_icon.icon_state = "mood1"
+				happiness_icon.icon_state = "pressure0"
 
 	if(old_icon && old_icon != happiness_icon.icon_state)
 		if(old_happiness > happiness)
@@ -110,7 +119,125 @@
 		var/spoopysound = pick('sound/effects/badmood1.ogg','sound/effects/badmood2.ogg','sound/effects/badmood3.ogg','sound/effects/badmood4.ogg')
 		sound_to(src, spoopysound)
 
+/mob/living/carbon/human
+	var/sanity_crisis_active = FALSE
+	var/sanity_crisis_resolved = FALSE
+	var/sanity_crisis_deadline = 0
+	var/sanity_crisis_started_at = 0
+	var/sanity_crisis_objective = 0
+	var/insanity_active = FALSE
+
+/mob/living/carbon/human/proc/update_sanity_crisis()
+	if(is_leech())
+		sanity_crisis_active = FALSE
+		sanity_crisis_resolved = FALSE
+		sanity_crisis_deadline = 0
+		sanity_crisis_started_at = 0
+		sanity_crisis_objective = 0
+		insanity_active = FALSE
+		return
+	if(insanity_active)
+		if(chem_effects[CE_MIND] > 0)
+			insanity_active = FALSE
+			sanity_crisis_resolved = TRUE
+			to_chat(src, "<span class='notice'>Your thoughts begin to settle.</span>")
+		else
+			hallucination(20, 10)
+
+	if(happiness > MOOD_LEVEL_SAD4)
+		if(sanity_crisis_active)
+			sanity_crisis_active = FALSE
+			sanity_crisis_deadline = 0
+			sanity_crisis_started_at = 0
+			sanity_crisis_objective = 0
+			to_chat(src, "<span class='notice'>The urgent thoughts pass as your mood improves.</span>")
+		if(!insanity_active)
+			sanity_crisis_resolved = FALSE
+		return
+
+	if(insanity_active || sanity_crisis_resolved)
+		return
+
+	if(sanity_crisis_active)
+		if(world.time < sanity_crisis_deadline)
+			return
+		insanity_active = TRUE
+		sanity_crisis_active = FALSE
+		sanity_crisis_deadline = 0
+		sanity_crisis_started_at = 0
+		sanity_crisis_objective = 0
+		hallucination(20, 10)
+		to_chat(src, "<span class='danger'>The thoughts overwhelm you. Your grip on reality begins to fracture.</span>")
+		return
+
+	sanity_crisis_active = TRUE
+	sanity_crisis_deadline = world.time + (5 MINUTES)
+	sanity_crisis_started_at = world.time
+	sanity_crisis_objective = pick(SANITY_CRISIS_SELF_HARM, SANITY_CRISIS_HARM_OTHER, SANITY_CRISIS_CREATE_ART)
+	switch(sanity_crisis_objective)
+		if(SANITY_CRISIS_SELF_HARM)
+			to_chat(src, "<span class='warning'>You have five minutes to steady yourself: deliberately hurt yourself.</span>")
+		if(SANITY_CRISIS_HARM_OTHER)
+			to_chat(src, "<span class='warning'>You have five minutes to steady yourself: hurt someone else.</span>")
+		if(SANITY_CRISIS_CREATE_ART)
+			to_chat(src, "<span class='warning'>You have five minutes to steady yourself: create a canvas artwork and have someone else examine it deeply.</span>")
+			var/turf/T = get_turf(src)
+			if(T)
+				new /obj/item/frame/canvas(T)
+
+/mob/living/carbon/human/proc/complete_sanity_crisis(var/objective)
+	if(!sanity_crisis_active || sanity_crisis_objective != objective)
+		return FALSE
+	if(world.time >= sanity_crisis_deadline)
+		insanity_active = TRUE
+		sanity_crisis_active = FALSE
+		sanity_crisis_deadline = 0
+		sanity_crisis_started_at = 0
+		sanity_crisis_objective = 0
+		hallucination(20, 10)
+		to_chat(src, "<span class='danger'>The thoughts overwhelm you. Your grip on reality begins to fracture.</span>")
+		return FALSE
+
+	sanity_crisis_active = FALSE
+	sanity_crisis_resolved = TRUE
+	sanity_crisis_deadline = 0
+	sanity_crisis_started_at = 0
+	sanity_crisis_objective = 0
+	to_chat(src, "<span class='notice'>You complete the task and hold on to your sense of reality.</span>")
+	return TRUE
+
+/mob/living/carbon/human/verb/harm_self_for_sanity()
+	set name = "Harm Yourself"
+	set category = "IC"
+	set desc = "Complete an urgent task by causing yourself a minor injury."
+	if(!sanity_crisis_active || sanity_crisis_objective != SANITY_CRISIS_SELF_HARM)
+		to_chat(src, "<span class='warning'>You have no reason to hurt yourself.</span>")
+		return
+
+	var/damage_before = getBruteLoss() + getFireLoss()
+	take_organ_damage(1)
+	if(getBruteLoss() + getFireLoss() <= damage_before)
+		to_chat(src, "<span class='warning'>You fail to injure yourself.</span>")
+		return
+
+	visible_message("<span class='danger'>[src] hurts themselves.</span>")
+	complete_sanity_crisis(SANITY_CRISIS_SELF_HARM)
+
 /mob/living/carbon/proc/handle_happiness()
+	if(mind?.is_leech())
+		update_happiness()
+		if(ishuman(src))
+			var/mob/living/carbon/human/leech = src
+			leech.update_sanity_crisis()
+		if(horror_loop)
+			sound_to(src, sound(null, repeat = 1, wait = 0, volume = 50, channel = 6))
+			horror_loop = FALSE
+			clear_fullscreen("freakout", /obj/screen/fullscreen/freakout)
+		return
+	if(ishuman(src))
+		var/mob/living/carbon/human/H = src
+		H.update_sanity_crisis()
+
 	if(happiness > MOOD_LEVEL_SAD4)
 		if(horror_loop)
 			to_chat(src, "<span class='phobia'>My nerves relax some... I can think clearly again...</span>")
@@ -148,6 +275,8 @@
 
 
 /mob/living/carbon/proc/add_event(category, type) //Category will override any events in the same category, should be unique unless the event is based on the same thing like hunger.
+	if(mind?.is_leech())
+		return 0
 	var/datum/happiness_event/the_event
 	if(events[category])
 		the_event = events[category]

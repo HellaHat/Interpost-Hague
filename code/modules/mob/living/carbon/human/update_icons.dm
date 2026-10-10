@@ -119,7 +119,7 @@ Please contact me on #coderbus IRC. ~Carn x
 //Human Overlays Indexes/////////
 #define MUTATIONS_LAYER			1
 #define SKIN_LAYER				2
-#define DAMAGE_LAYER			3
+#define HUMAN_DAMAGE_LAYER		3
 #define BODYHAIR_LAYER			4
 #define SURGERY_LEVEL			5		//bs12 specific.
 #define UNDERWEAR_LAYER         6
@@ -146,11 +146,12 @@ Please contact me on #coderbus IRC. ~Carn x
 #define L_HAND_LAYER			27
 #define R_HAND_LAYER			28
 #define BLEEDING_LAYER			29
-#define FIRE_LAYER				30		//If you're on fire
+#define HUMAN_FIRE_LAYER		30		//If you're on fire
 #define TARGETED_LAYER			31		//BS12: Layer for the target overlay from weapon targeting system
 #define FLIES_LAYER				32
 #define COLDBREATH_LAYER		33
-#define TOTAL_LAYERS			33
+#define MOUTH_ITEM_LAYER		34
+#define TOTAL_LAYERS			34
 
 /mob/living/carbon/human
 	var/list/overlays_standing[TOTAL_LAYERS]
@@ -250,7 +251,7 @@ var/global/list/damage_icon_parts = list()
 
 		standing_image.overlays += DI
 
-	overlays_standing[DAMAGE_LAYER]	= standing_image
+	overlays_standing[HUMAN_DAMAGE_LAYER]	= standing_image
 
 	if(update_icons)   update_icons()
 
@@ -277,6 +278,7 @@ var/global/list/damage_icon_parts = list()
 		g = "female"
 
 	var/icon_key = "[species.get_race_key(src)][g][s_tone][r_skin][g_skin][b_skin]"
+	icon_key += "_medical_[species.medical_skin_appearance]_[medical_appearance_key()]"
 	if(lip_style)
 		icon_key += "[lip_style]"
 	else
@@ -284,6 +286,7 @@ var/global/list/damage_icon_parts = list()
 	var/obj/item/organ/internal/eyes/eyes = internal_organs_by_name[species.vision_organ ? species.vision_organ : BP_EYES]
 	if(istype(eyes))
 		icon_key += "[rgb(eyes.eye_colour[1], eyes.eye_colour[2], eyes.eye_colour[3])]"
+		icon_key += "_medical_eyes_[eyes.robotic]_[eyes.status & ORGAN_DEAD]"
 	else
 		icon_key += "#000000"
 
@@ -295,6 +298,7 @@ var/global/list/damage_icon_parts = list()
 		for(var/M in part.markings)
 			icon_key += "[M][part.markings[M]["color"]]"
 		if(part)
+			icon_key += "_medical_limb_[part.can_show_medical_skin()]_[part.get_medical_skin_pallor()]"
 			icon_key += "[part.species.get_race_key(part.owner)]"
 			icon_key += "[part.dna.GetUIState(DNA_UI_GENDER)]"
 			icon_key += "[part.s_tone]"
@@ -351,7 +355,7 @@ var/global/list/damage_icon_parts = list()
 			else
 				base_icon.Blend(temp, ICON_OVERLAY)
 
-		if(pale)
+		if(pale && !species.medical_skin_appearance)
 			var/pale_color_mod = rgb(199,182,163)
 			base_icon.Blend(pale_color_mod)
 			base_icon.ColorTone(pale_color_mod)
@@ -434,7 +438,10 @@ var/global/list/damage_icon_parts = list()
 		else
 			occlusion_mask = mask_icon
 
-	if(!occlusion_mask)
+	return get_window_clipped_overlay(hair_icon, occlusion_mask)
+
+/mob/living/carbon/human/proc/get_window_clipped_overlay(var/image/source_overlay, var/icon/occlusion_mask)
+	if(!source_overlay || !occlusion_mask)
 		return null
 
 	var/icon/window_mask = new('icons/effects/effects.dmi', "nothing")
@@ -493,11 +500,11 @@ var/global/list/damage_icon_parts = list()
 	if(!has_window)
 		return null
 
-	var/icon/masked_hair = getFlatIcon(hair_icon)
-	masked_hair.AddAlphaMask(window_mask)
-	var/image/ret = image(masked_hair)
-	ret.color = hair_icon.color
-	ret.appearance_flags = hair_icon.appearance_flags
+	var/icon/clipped_icon = getFlatIcon(source_overlay)
+	clipped_icon.AddAlphaMask(window_mask)
+	var/image/ret = image(clipped_icon)
+	ret.color = source_overlay.color
+	ret.appearance_flags = source_overlay.appearance_flags
 	return ret
 
 /mob/living/carbon/human/proc/update_skin(var/update_icons=1)
@@ -703,8 +710,32 @@ var/global/list/damage_icon_parts = list()
 
 
 /mob/living/carbon/human/update_inv_wear_mask(var/update_icons=1)
-	if( wear_mask && ( istype(wear_mask, /obj/item/clothing/mask) || istype(wear_mask, /obj/item/clothing/accessory) ) && !(head && head.flags_inv & HIDEMASK))
-		overlays_standing[FACEMASK_LAYER]	= wear_mask.get_mob_overlay(src,slot_wear_mask_str)
+	if(mouth_item)
+		overlays_standing[MOUTH_ITEM_LAYER] = mouth_item.get_mob_overlay(src, slot_wear_mask_str)
+	else
+		overlays_standing[MOUTH_ITEM_LAYER] = null
+
+	var/mask_visible = !(head && head.flags_inv & HIDEMASK)
+	if(!mask_visible && istype(head, /obj/item/clothing/head/helmet/space) && istype(wear_mask, /obj/item/clothing/mask/breath))
+		mask_visible = TRUE
+
+	if(wear_mask && (istype(wear_mask, /obj/item/clothing/mask) || istype(wear_mask, /obj/item/clothing/accessory)) && mask_visible)
+		var/image/mask_overlay = wear_mask.get_mob_overlay(src,slot_wear_mask_str)
+		if(head && (head.flags_inv & BLOCKHAIR))
+			var/icon/helmet_icon = head.get_mob_icon(src, slot_head_str)
+			var/icon/clipped_mask = new('icons/effects/effects.dmi', "nothing")
+			var/mask_appearance_flags = mask_overlay.appearance_flags
+			for(var/facing in list(SOUTH, NORTH, EAST, WEST))
+				var/image/directional_overlay = image(mask_overlay)
+				directional_overlay.dir = facing
+				var/image/clipped_overlay = get_window_clipped_overlay(directional_overlay, new/icon(helmet_icon, dir = facing))
+				if(clipped_overlay)
+					clipped_mask.Insert(clipped_overlay.icon, dir = facing)
+				else
+					clipped_mask.Insert(new/icon('icons/effects/effects.dmi', "nothing"), dir = facing)
+			mask_overlay = image(clipped_mask)
+			mask_overlay.appearance_flags = mask_appearance_flags
+		overlays_standing[FACEMASK_LAYER]	= mask_overlay
 	else
 		overlays_standing[FACEMASK_LAYER]	= null
 	if(update_icons)   update_icons()
@@ -735,6 +766,8 @@ var/global/list/damage_icon_parts = list()
 
 /mob/living/carbon/human/update_inv_r_hand(var/update_icons=1)
 	if(r_hand)
+		if(hud_used && hud_used.r_hand_hud_object)
+			r_hand.screen_loc = hud_used.r_hand_hud_object.screen_loc
 		var/image/standing = r_hand.get_mob_overlay(src,slot_r_hand_str)
 		if(standing)
 			standing.appearance_flags |= RESET_ALPHA
@@ -749,6 +782,8 @@ var/global/list/damage_icon_parts = list()
 
 /mob/living/carbon/human/update_inv_l_hand(var/update_icons=1)
 	if(l_hand)
+		if(hud_used && hud_used.l_hand_hud_object)
+			l_hand.screen_loc = hud_used.l_hand_hud_object.screen_loc
 		var/image/standing = l_hand.get_mob_overlay(src,slot_l_hand_str)
 		if(standing)
 			standing.appearance_flags |= RESET_ALPHA
@@ -860,10 +895,10 @@ var/global/list/damage_icon_parts = list()
 	if(update_icons)   update_icons()
 
 /mob/living/carbon/human/update_fire(var/update_icons=1)
-	overlays_standing[FIRE_LAYER] = null
+	overlays_standing[HUMAN_FIRE_LAYER] = null
 	if(on_fire)
 		var/image/standing = overlay_image('icons/mob/OnFire.dmi', "Standing", RESET_COLOR)
-		overlays_standing[FIRE_LAYER] = standing
+		overlays_standing[HUMAN_FIRE_LAYER] = standing
 	if(update_icons)   update_icons()
 
 /mob/living/carbon/human/proc/update_surgery(var/update_icons=1)

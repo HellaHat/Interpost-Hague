@@ -89,7 +89,7 @@
 	var/vision_flags = SEE_SELF|SEE_BLACKNESS // Same flags as glasses.
 
 	// Death vars.
-	var/meat_type = /obj/item/weapon/reagent_containers/food/snacks/meat/human
+	var/meat_type = /obj/item/reagent_containers/food/snacks/meat/human
 	var/remains_type = /obj/item/remains/xeno
 	var/gibbed_anim = "gibbed-h"
 	var/dusted_anim = "dust-h"
@@ -103,6 +103,8 @@
 	// Environment tolerance/life processes vars.
 	var/reagent_tag                                   //Used for metabolizing reagents.
 	var/breath_pressure = 20                          // Minimum partial pressure safe for breathing, kPa
+	var/failed_breath_oxy_loss_multiplier = 1
+	var/safe_exhaled_pressure = 10                    // Maximum breathable-gas partial pressure for exhaled gas, kPa
 	var/breath_type = "oxygen"                        // Non-oxygen gas breathed, if any.
 	var/poison_type = "phoron"                        // Poisonous air.
 	var/exhale_type = "carbon_dioxide"                // Exhaled gas type.
@@ -117,6 +119,8 @@
 	var/warning_high_pressure = WARNING_HIGH_PRESSURE // High pressure warning.
 	var/warning_low_pressure = WARNING_LOW_PRESSURE   // Low pressure warning.
 	var/hazard_low_pressure = HAZARD_LOW_PRESSURE     // Dangerously low pressure.
+	var/safe_air_moles_min                            // If set, mol/tile limits outside which the species is harmed.
+	var/safe_air_moles_max
 	var/body_temperature = 310.15	                  // Species will try to stabilize at this temperature.
 	                                                  // (also affects temperature processing)
 
@@ -147,8 +151,12 @@
 	var/darksight = 8      // Native darksight distance.
 	var/species_flags = 0         // Various specific features.
 	var/appearance_flags = 0      // Appearance/display related features.
+	var/medical_skin_appearance = FALSE
 	var/spawn_flags = 0           // Flags that specify who can spawn as this species
 	var/slowdown = 0              // Passive movement speed malus (or boost, if negative)
+	var/list/stat_modifiers = list()
+	var/infection_modifier = 1
+	var/pathogen_bodytype
 	var/primitive_form            // Lesser form, if any (ie. monkey for humans)
 	var/greater_form              // Greater form, if any, ie. human for monkeys.
 	var/holder_type
@@ -187,6 +195,8 @@
 		BP_L_FOOT = list("path" = /obj/item/organ/external/foot),
 		BP_R_FOOT = list("path" = /obj/item/organ/external/foot/right)
 		)
+	var/list/stance_limbs = list(BP_L_LEG, BP_R_LEG, BP_L_FOOT, BP_R_FOOT)
+	var/stance_damage_multiplier = 1
 
 	// The basic skin colours this species uses
 	var/list/base_skin_colours
@@ -256,10 +266,10 @@ The slots that you can use are found in items_clothing.dm and are the inventory 
 	return sanitizeName(name)
 
 /datum/species/proc/equip_survival_gear(var/mob/living/carbon/human/H,var/extendedtank = 1)
-	if(istype(H.get_equipped_item(slot_back), /obj/item/weapon/storage/backpack))
-		if (extendedtank)	H.equip_to_slot_or_del(new /obj/item/weapon/storage/box/engineer(H.back), slot_in_backpack)
+	if(istype(H.get_equipped_item(slot_back), /obj/item/storage/backpack))
+		if (extendedtank)	H.equip_to_slot_or_del(new /obj/item/storage/box/engineer(H.back), slot_in_backpack)
 	else
-		if (extendedtank)	H.equip_to_slot_or_del(new /obj/item/weapon/storage/box/engineer(H), slot_r_hand)
+		if (extendedtank)	H.equip_to_slot_or_del(new /obj/item/storage/box/engineer(H), slot_r_hand)
 
 /datum/species/proc/create_organs(var/mob/living/carbon/human/H) //Handles creation of mob organs.
 
@@ -396,6 +406,8 @@ The slots that you can use are found in items_clothing.dm and are the inventory 
 	return
 
 /datum/species/proc/handle_vision(var/mob/living/carbon/human/H)
+	if(!H.can_sense_blind_tiles())
+		H.clear_blind_tiles()
 	H.update_sight()
 	H.set_sight(H.sight|get_vision_flags(H)|H.equipment_vision_flags)
 
@@ -413,7 +425,7 @@ The slots that you can use are found in items_clothing.dm and are the inventory 
 	if(!H.client)//no client, no screen to update
 		return 1
 
-	H.set_fullscreen(H.eye_blind && !H.equipment_prescription, "blind", /obj/screen/fullscreen/blind)
+	H.set_fullscreen(H.eye_closed || (H.eye_blind && !H.equipment_prescription), "blind", /obj/screen/fullscreen/blind)
 	H.set_fullscreen(H.stat == UNCONSCIOUS, "blackout", /obj/screen/fullscreen/blackout)
 
 	if(config.welder_vision)
@@ -634,13 +646,49 @@ The slots that you can use are found in items_clothing.dm and are the inventory 
 		return
 	client.screen -= pain_effect_extreme
 
-/mob/living/proc/add_cryo_filter_effect()
-	var/obj/screen/plane_master/cryo/C = new
-	client.screen += C
+/mob/living/proc/start_cryo_filter_effect()
+	if(!client)
+		return
+	remove_cryo_filter_effect()
+	cryo_filter_effect = new
+	client.screen += cryo_filter_effect
+	// Rarely add a strong directional ghost image to the standard cryo blur.
+	if(prob(20))
+		cryo_double_sight_effect = new
+		client.screen += cryo_double_sight_effect
+		animate_cryo_double_sight()
+
+/mob/living/proc/animate_cryo_double_sight()
+	if(!cryo_double_sight_effect)
+		return
+	var/double_sight = cryo_double_sight_effect.filters[1]
+	// Shift the directional ghost around the view, periodically returning to focus.
+	animate(double_sight, x = 0, y = 0, time = 1.2 SECONDS, easing = SINE_EASING | EASE_OUT, loop = -1)
+	animate(double_sight, x = 5, y = 1, time = 0.9 SECONDS, easing = SINE_EASING | EASE_IN)
+	animate(double_sight, x = 2, y = 5, time = 0.9 SECONDS, easing = SINE_EASING)
+	animate(double_sight, x = -4, y = 3, time = 0.9 SECONDS, easing = SINE_EASING)
+	animate(double_sight, x = -5, y = -2, time = 0.9 SECONDS, easing = SINE_EASING)
+	animate(double_sight, x = -1, y = -5, time = 0.9 SECONDS, easing = SINE_EASING)
+	animate(double_sight, x = 0, y = 0, time = 1.2 SECONDS, easing = SINE_EASING | EASE_IN)
+
+/mob/living/proc/fade_cryo_filter_effect(var/duration = 40 SECONDS)
+	if(!cryo_filter_effect)
+		return
+	animate(cryo_filter_effect.filters[1], size = 0, time = duration, flags = ANIMATION_PARALLEL)
+	animate(cryo_filter_effect.filters[2], size = 0, time = duration, flags = ANIMATION_PARALLEL)
+	animate(cryo_filter_effect.filters[3], size = 0, time = duration, flags = ANIMATION_PARALLEL)
+	if(cryo_double_sight_effect)
+		animate(cryo_double_sight_effect.filters[1], x = 0, y = 0, time = duration, easing = SINE_EASING | EASE_OUT)
+	addtimer(CALLBACK(src, /mob/living/proc/remove_cryo_filter_effect), duration, TIMER_UNIQUE|TIMER_OVERRIDE|TIMER_NO_HASH_WAIT)
 
 /mob/living/proc/remove_cryo_filter_effect()
-	var/obj/screen/plane_master/cryo/C
-	client.screen -= C
+	if(!cryo_filter_effect)
+		return
+	if(client)
+		client.screen -= cryo_filter_effect
+		client.screen -= cryo_double_sight_effect
+	QDEL_NULL(cryo_filter_effect)
+	QDEL_NULL(cryo_double_sight_effect)
 
 /datum/species/proc/post_organ_rejuvenate(var/obj/item/organ/org)
 	return

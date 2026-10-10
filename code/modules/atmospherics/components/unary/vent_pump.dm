@@ -10,6 +10,7 @@
 /obj/machinery/atmospherics/unary/vent_pump
 	icon = 'icons/atmos/vent_pump.dmi'
 	icon_state = "map_vent"
+	los_never_cull = TRUE
 
 	name = "Air Vent"
 	desc = "Has a valve and pump attached to it."
@@ -71,20 +72,8 @@
 
 // Ensure vent pumps can connect to mains pipes by targeting the supply line component when adjacent to a mains pipe.
 /obj/machinery/atmospherics/unary/vent_pump/atmos_init()
-	..()
-	if(node)
-		return
-	// If no simple pipe neighbor was found, try connecting to mains pipes on our facing side
-	for(var/obj/machinery/atmospherics/mains_pipe/M in get_step(src, dir))
-		// Only connect if the mains pipe faces us
-		if(M.initialize_mains_directions & get_dir(M, src))
-			// Vent pumps release to supply; bind to the supply internal component
-			node = M.supply
-			break
-	// Defer icon/network work to base helpers
-	if(node)
-		update_icon()
-		update_underlays()
+	update_icon()
+	update_underlays()
 
 /obj/machinery/atmospherics/unary/vent_pump/New()
 	..()
@@ -119,8 +108,6 @@
 /obj/machinery/atmospherics/unary/vent_pump/update_icon(var/safety = 0)
 	if(!check_icon_cache())
 		return
-	if (!node)
-		update_use_power(POWER_USE_OFF)
 
 	overlays.Cut()
 
@@ -143,18 +130,7 @@
 	overlays += icon_manager.get_atmos_icon("device", , , vent_icon)
 
 /obj/machinery/atmospherics/unary/vent_pump/update_underlays()
-	if(..())
-		underlays.Cut()
-		var/turf/T = get_turf(src)
-		if(!istype(T))
-			return
-		if(!T.is_plating() && node && node.level == 1 && istype(node, /obj/machinery/atmospherics/pipe))
-			return
-		else
-			if(node)
-				add_underlay(T, node, dir, node.icon_connect_type)
-			else
-				add_underlay(T,, dir)
+	underlays.Cut()
 
 /obj/machinery/atmospherics/unary/vent_pump/hide()
 	update_icon()
@@ -169,67 +145,103 @@
 		return 0
 	return 1
 
+/obj/machinery/atmospherics/unary/vent_pump/proc/get_target_pressure()
+	var/obj/machinery/alarm/area_modcon = initial_loc ? initial_loc.master_air_alarm : null
+	if(!area_modcon)
+		return 0
+	var/target_pressure = min(area_modcon.output_pressure, MAX_PUMP_PRESSURE)
+	if(pressure_checks & PRESSURE_CHECK_EXTERNAL)
+		target_pressure = min(target_pressure, external_pressure_bound)
+	return target_pressure
+
+/obj/machinery/atmospherics/unary/vent_pump/proc/get_supply_status(obj/machinery/station_gas_tank/tank)
+	if(stat & BROKEN)
+		return "vent broken"
+	if(stat & NOPOWER)
+		return "vent unpowered"
+	if(!use_power)
+		return "vent switched off"
+	if(welded)
+		return "vent welded"
+	if(hibernate > world.time)
+		return "vent sleeping"
+	var/obj/machinery/alarm/area_modcon = initial_loc ? initial_loc.master_air_alarm : null
+	if(!area_modcon)
+		return "no area modcon"
+	if(!area_modcon.can_supply_air())
+		return "area modcon disabled or offline"
+	var/datum/gas_mixture/environment = loc ? loc.return_air() : null
+	if(!environment)
+		return "no room atmosphere"
+	var/target_pressure = get_target_pressure()
+	if(environment.get_tile_moles() > PRESSURE_TO_MOLES(target_pressure + 0.5))
+		return last_flow_rate > 0 ? "recovering excess gas" : "above target"
+	if(environment.get_tile_moles() >= PRESSURE_TO_MOLES(target_pressure))
+		return "at target"
+	if(!tank)
+		tank = get_station_gas_tank(src)
+	if(!tank)
+		return "no station gas tank"
+	return tank.get_supply_status()
+
+/obj/machinery/atmospherics/unary/vent_pump/proc/get_supply_demand(obj/machinery/station_gas_tank/tank)
+	if(!pump_direction || get_station_gas_tank(src) != tank || get_supply_status(tank))
+		return 0
+	var/datum/gas_mixture/environment = loc.return_air()
+	var/target_pressure = get_target_pressure()
+	var/moles_delta = PRESSURE_TO_MOLES(target_pressure) - environment.get_tile_moles()
+	return max(0, moles_delta * environment.volume * environment.group_multiplier / CELL_VOLUME)
+
 /obj/machinery/atmospherics/unary/vent_pump/Process()
 	..()
 
 	if (hibernate > world.time)
 		return 1
 
-	if (!node)
-		update_use_power(POWER_USE_OFF)
 	if(!can_pump())
 		return 0
 
 	var/datum/gas_mixture/environment = loc.return_air()
-
-	var/power_draw = -1
-
-	//Figure out the target pressure difference
-	var/pressure_delta = get_pressure_delta(environment)
-	//src.visible_message("DEBUG >>> [src]: pressure_delta = [pressure_delta]")
-
-	if((environment.temperature || air_contents.temperature) && pressure_delta > 0.5)
-		if(pump_direction) //internal -> external
-			var/transfer_moles = calculate_transfer_moles(air_contents, environment, pressure_delta)
-			power_draw = pump_gas(src, air_contents, environment, transfer_moles, power_rating)
-		else //external -> internal
-			var/transfer_moles = calculate_transfer_moles(environment, air_contents, pressure_delta, (network)? network.volume : 0)
-
-			//limit flow rate from turfs
-			transfer_moles = min(transfer_moles, environment.total_moles*air_contents.volume/environment.volume)	//group_multiplier gets divided out here
-			power_draw = pump_gas(src, environment, air_contents, transfer_moles, power_rating)
-
+	var/obj/machinery/station_gas_tank/tank = get_station_gas_tank(src)
+	last_flow_rate = 0
+	last_power_draw = 0
+	if(!environment || !tank)
+		return 0
+	if(pump_direction)
+		var/obj/machinery/alarm/area_modcon = initial_loc ? initial_loc.master_air_alarm : null
+		var/excess_moles = environment.get_tile_moles() - PRESSURE_TO_MOLES(get_target_pressure())
+		if(area_modcon && area_modcon.can_supply_air() && excess_moles > PRESSURE_TO_MOLES(0.5))
+			var/recovery_moles = min(tank.max_output_moles, excess_moles * environment.volume * environment.group_multiplier / CELL_VOLUME)
+			last_flow_rate = area_modcon.recover_air(tank, environment, recovery_moles)
+			if(last_flow_rate)
+				last_power_draw = min(power_rating, last_flow_rate * 10)
+				use_power_oneoff(last_power_draw)
+			return 1
+		var/transfer_moles = get_supply_demand(tank)
+		if(transfer_moles <= 0)
+			return 0
+		last_flow_rate = tank.supply(environment, transfer_moles, src)
 	else
-		//If we're in an area that is fucking ideal, and we don't have to do anything, chances are we won't next tick either so why redo these calculations?
-		//JESUS FUCK.  THERE ARE LITERALLY 250 OF YOU MOTHERFUCKERS ON ZLEVEL ONE AND YOU DO THIS SHIT EVERY TICK WHEN VERY OFTEN THERE IS NO REASON TO
-		if(pump_direction && pressure_checks == PRESSURE_CHECK_EXTERNAL) //99% of all vents
-			hibernate = world.time + (rand(100,200))
-
-
-	if (power_draw >= 0)
-		last_power_draw = power_draw
-		use_power_oneoff(power_draw)
-		if(network)
-			network.update = 1
-
+		var/transfer_moles = get_transfer_moles(environment)
+		if(transfer_moles < MINIMUM_MOLES_TO_PUMP)
+			return 0
+		var/obj/machinery/alarm/area_modcon = initial_loc ? initial_loc.master_air_alarm : null
+		if(area_modcon)
+			last_flow_rate = area_modcon.recover_air(tank, environment, transfer_moles)
+	if(last_flow_rate)
+		last_power_draw = min(power_rating, last_flow_rate * 10)
+		use_power_oneoff(last_power_draw)
 	return 1
 
-/obj/machinery/atmospherics/unary/vent_pump/proc/get_pressure_delta(datum/gas_mixture/environment)
-	var/pressure_delta = DEFAULT_PRESSURE_DELTA
-	var/environment_pressure = environment.return_pressure()
-
-	if(pump_direction) //internal -> external
-		if(pressure_checks & PRESSURE_CHECK_EXTERNAL)
-			pressure_delta = min(pressure_delta, external_pressure_bound - environment_pressure) //increasing the pressure here
-		if(pressure_checks & PRESSURE_CHECK_INTERNAL)
-			pressure_delta = min(pressure_delta, air_contents.return_pressure() - internal_pressure_bound) //decreasing the pressure here
-	else //external -> internal
-		if(pressure_checks & PRESSURE_CHECK_EXTERNAL)
-			pressure_delta = min(pressure_delta, environment_pressure - external_pressure_bound) //decreasing the pressure here
-		if(pressure_checks & PRESSURE_CHECK_INTERNAL)
-			pressure_delta = min(pressure_delta, internal_pressure_bound - air_contents.return_pressure()) //increasing the pressure here
-
-	return pressure_delta
+/obj/machinery/atmospherics/unary/vent_pump/proc/get_transfer_moles(datum/gas_mixture/environment)
+	var/transfer_moles = environment.get_total_moles()
+	if(pressure_checks & PRESSURE_CHECK_EXTERNAL)
+		var/excess_moles = environment.get_tile_moles() - PRESSURE_TO_MOLES(external_pressure_bound)
+		transfer_moles = min(transfer_moles, max(0, excess_moles * environment.volume * environment.group_multiplier / CELL_VOLUME))
+	if(pressure_checks & PRESSURE_CHECK_INTERNAL)
+		var/pressure_delta = max(0, internal_pressure_bound - air_contents.return_pressure())
+		transfer_moles = min(transfer_moles, calculate_transfer_moles(environment, air_contents, pressure_delta))
+	return transfer_moles
 
 /obj/machinery/atmospherics/unary/vent_pump/proc/broadcast_status()
 	if(!radio_connection)
@@ -351,7 +363,7 @@
 /obj/machinery/atmospherics/unary/vent_pump/attackby(obj/item/W, mob/user)
 	if(isWelder(W))
 
-		var/obj/item/weapon/weldingtool/WT = W
+		var/obj/item/weldingtool/WT = W
 
 		if(!WT.isOn())
 			to_chat(user, "<span class='notice'>The welding tool needs to be on to start this task.</span>")
@@ -403,9 +415,7 @@
 	if (node && node.level==1 && isturf(T) && !T.is_plating())
 		to_chat(user, "<span class='warning'>You must remove the plating first.</span>")
 		return 1
-	var/datum/gas_mixture/int_air = return_air()
-	var/datum/gas_mixture/env_air = loc.return_air()
-	if ((int_air.return_pressure()-env_air.return_pressure()) > 2*ONE_ATMOSPHERE)
+	if (air_contents.return_pressure() > 2*ONE_ATMOSPHERE)
 		to_chat(user, "<span class='warning'>You cannot unwrench \the [src], it is too exerted due to internal pressure.</span>")
 		add_fingerprint(user)
 		return 1

@@ -2,6 +2,9 @@
 "a" = (
 /turf/space,
 /area/space)
+"." = (
+/turf/simulated/floor/airless,
+/area/space)
 "f" = (
 /obj/structure/window/reinforced,
 /turf/space,
@@ -16,15 +19,15 @@
 /area/space)
 
 (1,1,1) = {"
- 
- 
- 
- 
- 
- 
- 
- 
- 
+a
+a
+a
+a
+a
+a
+a
+a
+a
 "}
 (2,1,1) = {"
 a

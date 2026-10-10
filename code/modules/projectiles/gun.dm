@@ -29,8 +29,8 @@
 
 //Parent gun type. Guns are weapons that can be aimed at mobs and act over a distance
 /obj/item/weapon/gun
-	name = "gun"
-	desc = "Its a gun. It's pretty terrible, though."
+	name = "Uncatalogued G-0 Weapon System"
+	desc = "An unidentified handheld weapon with an unknown firing mechanism. No manufacturer or model markings are present."
 	icon = 'icons/obj/gun.dmi'
 	item_icons = list(
 		slot_l_hand_str = 'icons/mob/onmob/items/lefthand_guns.dmi',
@@ -343,6 +343,8 @@
 	if(!istype(P))
 		return //default behaviour only applies to true projectiles
 
+	P.attack_margin = user.skillcheck_margin(user.skills[SKILL_RANGE], SKILL_RANGE)
+
 	var/acc_mod = burst_accuracy[min(burst, burst_accuracy.len)]
 	var/disp_mod = dispersion[min(burst, dispersion.len)]
 
@@ -545,20 +547,6 @@
 		else
 			user.client.mouse_pointer_icon = initial(user.client.mouse_pointer_icon)
 
-/obj/item/weapon/gun/attack_hand_right(mob/user as mob)
-	if(!Adjacent(user))
-		return
-	if(user.incapacitated())
-		to_chat(user, "<span class='warning'>You can't do that right now!</span>")
-		return
-	if(src != user.get_active_hand())
-		return
-	if(safety)
-		safety = 0
-		playsound(user, 'sound/weapons/guns/interact/selector.ogg', 50, 1)
-		to_chat(user, "<span class='notice'>You toggle the safety off.</span>")
-		user.client.mouse_pointer_icon = file("icons/misc/pointer.dmi")
-
 //Gun pointer
 /obj/item/weapon/gun/pickup(mob/user)
 	..()
@@ -570,7 +558,7 @@
 	if(!safety && (slot == slot_l_hand || slot == slot_r_hand))
 		user.client.mouse_pointer_icon = file("icons/misc/pointer.dmi")
 	else
-		user.client.mouse_pointer_icon = null
+		user.client.mouse_pointer_icon = initial(user.client.mouse_pointer_icon)
 
 /obj/item/weapon/gun/dropped(mob/user)
 	..()
@@ -586,6 +574,8 @@ var/dispersion_modifyer = 0 //while(automatic) dispersion_mod++; dispersion = 0.
 	var/list/selected_target[2]
 
 /client/MouseDown(object, location, control, params)
+	if(flashlight_mouse_down(object, params))
+		return
 	var/delay = mob.CanMobAutoclick(object, location, params)
 	if(delay)
 		selected_target[1] = object
@@ -599,8 +589,12 @@ var/dispersion_modifyer = 0 //while(automatic) dispersion_mod++; dispersion = 0.
 
 /client/MouseUp(object, location, control, params)
 	selected_target[1] = null
+	flashlight_aim_target = null
 
 /client/MouseDrag(src_object,atom/over_object,src_location,over_location,src_control,over_control,params)
+	if(flashlight_aim_target && over_object)
+		flashlight_aim_target = over_object
+		flashlight_aim_params = params
 	if(selected_target[1] && over_object.IsAutoclickable())
 		selected_target[1] = over_object
 		selected_target[2] = params

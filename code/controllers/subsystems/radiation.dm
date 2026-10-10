@@ -40,14 +40,15 @@ SUBSYSTEM_DEF(radiation)
 		if (MC_TICK_CHECK)
 			return
 
-	if(!sources.len)
-		listeners.Cut()
-
+	var/no_sources = !sources.len
 	while(listeners.len)
 		var/atom/A = listeners[listeners.len]
 		listeners.len--
 
 		if(!QDELETED(A))
+			// Without sources, only cosmic background in space can apply.
+			if(no_sources && !istype(get_turf(A), /turf/space))
+				continue
 			var/atom/location = A.loc
 			var/rads = 0
 			if(istype(location))
@@ -95,7 +96,7 @@ SUBSYSTEM_DEF(radiation)
 				working = round((working / (origin.cached_rad_resistance * config.radiation_resistance_multiplier)), 0.1)
 			if((working <= .) || (working <= RADIATION_THRESHOLD_CUTOFF))
 				break // Already affected by a stronger source (or its zero...)
-		. = max((working / (dist ** 2)), .) //Butchered version of the inverse square law. Works for this purpose
+		. = max((working / (max(dist, 1) ** 2)), .) //Butchered version of the inverse square law. Works for this purpose
 		if(. <= RADIATION_THRESHOLD_CUTOFF)
 			. = 0
 

@@ -8,7 +8,7 @@ GLOBAL_DATUM_INIT(delver, /datum/antagonist/delver, new)
 	antag_text = "You are a <b>survivor.</b> Wander the wastes and try not to die."
 	leader_welcome_text = "Welcome."
 	landmark_id = "Hell Spawn"
-	id_type = /obj/item/weapon/card/id/centcom/ERT
+	id_type = /obj/item/card/id/centcom/ERT
 
 	flags = ANTAG_OVERRIDE_JOB | ANTAG_HAS_LEADER | ANTAG_CHOOSE_NAME | ANTAG_RANDOM_EXCEPTED
 	antaghud_indicator = "hudloyalist"
@@ -22,6 +22,10 @@ GLOBAL_DATUM_INIT(delver, /datum/antagonist/delver, new)
 /datum/antagonist/delver/create_default(var/mob/source)
 	var/mob/living/carbon/human/M = ..()
 	if(istype(M)) M.age = rand(25,45)
+
+/datum/antagonist/delver/place_mob(var/mob/living/mob)
+	get_starting_locations()
+	..()
 
 /datum/antagonist/delver/Initialize()
 	..()

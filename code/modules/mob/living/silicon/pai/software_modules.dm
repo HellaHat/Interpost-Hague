@@ -259,7 +259,7 @@
 		else if(href_list["cable"])
 			var/turf/T = get_turf_or_move(P.loc)
 			P.hack_aborted = 0
-			P.cable = new /obj/item/weapon/pai_cable(T)
+			P.cable = new /obj/item/pai_cable(T)
 			for(var/mob/M in viewers(T))
 				M.show_message("<span class='warning'>A port on [P] opens to reveal [P.cable], which promptly falls to the floor.</span>", 3,
 				               "<span class='warning'>You hear the soft click of something light and hard falling to the ground.</span>", 2)
@@ -306,15 +306,14 @@
 		var/turf/T = get_turf_or_move(user.loc)
 		if(!T)
 			data["reading"] = 0
-			data["pressure"] = 0
+			data["tile_moles"] = 0
 			data["temperature"] = 0
 			data["temperatureC"] = 0
 			data["gas"] = list()
 		else
 			var/datum/gas_mixture/env = T.return_air()
 			data["reading"] = 1
-			var/pres = env.return_pressure() * 10
-			data["pressure"] = "[round(pres/10)].[pres%10]"
+			data["tile_moles"] = round(env.get_tile_moles(), 0.1)
 			data["temperature"] = round(env.temperature)
 			data["temperatureC"] = round(env.temperature-T0C)
 

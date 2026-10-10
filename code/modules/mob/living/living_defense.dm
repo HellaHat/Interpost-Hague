@@ -182,11 +182,11 @@
 	if(prob(blocked)) //armour provides a chance to turn sharp/edge weapon attacks into blunt ones
 		damage_flags &= ~(DAM_SHARP|DAM_EDGE)
 
-	if(user.stats[STAT_ST])//If they have strength then add it.
-		effective_force += strToDamageModifier(user.stats[STAT_ST])
+	if(user.combat_strength())//If they have strength then add it.
+		effective_force += strToDamageModifier(user.combat_strength())
 	//Strong attack
 	if(user.c_intent == I_STRONG) // If damage_modifier is 0
-		effective_force +=  strToDamageModifier(user.stats[STAT_ST])
+		effective_force +=  strToDamageModifier(user.combat_strength())
 
 	//to_world("Effective Force: [effective_force].  StrMod: [strToDamageModifier(user.stats[STAT_ST])])") //DebuggingstrToDamageModifier
 
@@ -290,6 +290,10 @@
 
 	if(!damage || !istype(user))
 		return
+	if(istype(user, /mob/living/simple_animal))
+		var/mob/living/simple_animal/animal_attacker = user
+		if(!animal_attacker.gurps_melee_attack_check(src))
+			return 0
 
 	adjustBruteLoss(damage)
 	admin_attack_log(user, src, "Attacked", "Was attacked", "attacked")

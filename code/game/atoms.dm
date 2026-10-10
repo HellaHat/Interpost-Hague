@@ -297,8 +297,6 @@ its easier to just keep the beam vertical.
 			f_name += "oil-stained [name][infix]."
 
 	if(!isobserver(user))
-		user.visible_message("<font size=1>[user.name] looks at [src].</font>")
-
 		if(get_dist(user,src) > 5)//Don't get descriptions of things far away.
 			to_chat(user, "<span class='info'>It's too far away to see clearly.</span>")
 			return
@@ -571,6 +569,7 @@ its easier to just keep the beam vertical.
 		return
 
 	user.forceMove(get_turf(src))
+	user.adjustStaminaLoss(rand(6,15))
 
 	if (get_turf(user) == get_turf(src))
 		user.visible_message("<span class='warning'>\The [user] climbs onto \the [src]!</span>")
@@ -648,6 +647,7 @@ its easier to just keep the beam vertical.
 				return 0
 
 		user.setClickCooldown(DEFAULT_SLOW_COOLDOWN)
+		user.set_special_action_cooldown(world.time + DEFAULT_SLOW_COOLDOWN)
 		return 1 //We do have legs now though, so we can kick.
 
 //Jumping
@@ -675,6 +675,7 @@ its easier to just keep the beam vertical.
 	user.adjustStaminaLoss(rand(60,80))//Jumping is VERY exhausting.
 	user.throw_at(target, 2, 0.5, user)
 	user.setClickCooldown(DEFAULT_SLOW_COOLDOWN)
+	user.set_special_action_cooldown(world.time + DEFAULT_SLOW_COOLDOWN)
 
 /atom/proc/get_color()
 	return color
@@ -697,18 +698,9 @@ this doesn't work anymore lol
 */
 
 /atom/MouseMove(location, control, params)
+	if(usr && usr.client)
+		usr.client.vehicle_placement_hover(src, control, params)
 	..()
-	if(!ishuman(usr)) //this is vile shitcode but for some reason adding a var to the mob wasn't working
-		return 0
-	var/mob/living/carbon/human/C = usr
-	if(C.fixeye.icon_state == "fixeye")
-		return 0
-	if(get_dist(usr,src) <= 10)
-		return usr.face_atom(src)
-	if(usr.resting || usr.lying)
-		return 0
-	if(usr.facing_dir)
-		return 0
 
 
 /atom/proc/create_bullethole(var/obj/item/projectile/Proj)

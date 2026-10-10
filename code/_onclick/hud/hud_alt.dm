@@ -31,6 +31,8 @@
 	var/obj/screen/swaphands_hud_object
 	var/obj/screen/action_intent
 	var/obj/screen/move_intent
+	var/obj/screen/combat/combat_intent_button
+	var/obj/screen/combat_popup/combat_intent_popup
 
 	var/list/adding
 	var/list/other
@@ -45,22 +47,42 @@
 	..()
 
 /datum/hud/Destroy()
+	if(mymob && mymob.client)
+		mymob.client.screen -= combat_intent_popup
+		mymob.client.screen -= combat_intent_button
 	. = ..()
 	lingchemdisplay = null
 	r_hand_hud_object = null
 	l_hand_hud_object = null
 	action_intent = null
 	move_intent = null
+	combat_intent_button = null
+	combat_intent_popup = null
 	adding = null
 	other = null
 	hotkeybuttons = null
 //	item_action_list = null // ?
 	mymob = null
 
+/datum/hud/proc/update_selected_hand_overlay()
+	if(!mymob || !l_hand_hud_object || !r_hand_hud_object)
+		return
+	if(l_hand_hud_object.icon != 'icons/mob/screen/os13.dmi')
+		return
+	l_hand_hud_object.overlays.Cut()
+	r_hand_hud_object.overlays.Cut()
+	var/obj/screen/active_box = mymob.hand ? l_hand_hud_object : r_hand_hud_object
+	active_box.overlays += image('icons/mob/screen/os13.dmi', "sel_hand")
+
 /datum/hud/proc/hidden_inventory_update()
 	if(!mymob) return
+	update_inventory_slot_occupancy()
 	if(ishuman(mymob))
 		var/mob/living/carbon/human/H = mymob
+		if(H.l_hand && l_hand_hud_object)
+			H.l_hand.screen_loc = l_hand_hud_object.screen_loc
+		if(H.r_hand && r_hand_hud_object)
+			H.r_hand.screen_loc = r_hand_hud_object.screen_loc
 		for(var/gear_slot in H.species.hud.gear)
 			var/list/hud_data = H.species.hud.gear[gear_slot]
 			if(inventory_shown && hud_shown)
@@ -93,6 +115,7 @@
 /datum/hud/proc/persistant_inventory_update()
 	if(!mymob)
 		return
+	update_inventory_slot_occupancy()
 
 	if(ishuman(mymob))
 		var/mob/living/carbon/human/H = mymob
@@ -112,7 +135,7 @@
 						if(H.back)    H.back.screen_loc =    hud_data["loc"]
 					if(slot_l_store)
 						var/list/left_pocket_items = H.get_pocket_items(slot_l_store)
-						var/obj/item/weapon/storage/internal/pockets/left_pocket_storage = H.get_pocket_storage(slot_l_store)
+						var/obj/item/storage/internal/pockets/left_pocket_storage = H.get_pocket_storage(slot_l_store)
 						if(left_pocket_items.len && H.s_active != left_pocket_storage)
 							var/obj/item/left_pocket_item = left_pocket_items[1]
 							left_pocket_item.screen_loc = hud_data["loc"]
@@ -120,7 +143,7 @@
 							H.client.screen |= left_pocket_item
 					if(slot_r_store)
 						var/list/right_pocket_items = H.get_pocket_items(slot_r_store)
-						var/obj/item/weapon/storage/internal/pockets/right_pocket_storage = H.get_pocket_storage(slot_r_store)
+						var/obj/item/storage/internal/pockets/right_pocket_storage = H.get_pocket_storage(slot_r_store)
 						if(right_pocket_items.len && H.s_active != right_pocket_storage)
 							var/obj/item/right_pocket_item = right_pocket_items[1]
 							right_pocket_item.screen_loc = hud_data["loc"]
@@ -147,13 +170,13 @@
 					if(slot_back)
 						if(H.back)    H.back.screen_loc =    null
 					if(slot_l_store)
-						var/obj/item/weapon/storage/internal/pockets/left_pocket_storage = H.get_pocket_storage(slot_l_store)
+						var/obj/item/storage/internal/pockets/left_pocket_storage = H.get_pocket_storage(slot_l_store)
 						if(H.s_active != left_pocket_storage)
 							for(var/obj/item/I in H.get_pocket_items(slot_l_store))
 								H.client.screen -= I
 								I.screen_loc = null
 					if(slot_r_store)
-						var/obj/item/weapon/storage/internal/pockets/right_pocket_storage = H.get_pocket_storage(slot_r_store)
+						var/obj/item/storage/internal/pockets/right_pocket_storage = H.get_pocket_storage(slot_r_store)
 						if(H.s_active != right_pocket_storage)
 							for(var/obj/item/I in H.get_pocket_items(slot_r_store))
 								H.client.screen -= I
@@ -167,6 +190,13 @@
 					if(slot_wear_mask)
 						if(H.wear_mask) H.wear_mask.screen_loc = null
 
+
+/datum/hud/proc/update_inventory_slot_occupancy()
+	if(!mymob)
+		return
+	for(var/obj/screen/inventory/slot in adding + other)
+		if(slot.slot_id)
+			slot.update_occupancy(mymob.get_equipped_item(slot.slot_id))
 
 /datum/hud/proc/instantiate()
 	if(!ismob(mymob)) return 0
@@ -316,7 +346,9 @@
 	p3.render_target = "all3"
 
 	client.screen.Add(p3)
-	client.screen.Add(new /obj/screen/plane_master/los_occluders)
+	// A contentless plane master can corrupt other planes (see ghost_dummy), so only add it when enhanced LOS populates it.
+	if(enhanced_los_enabled)
+		client.screen.Add(new /obj/screen/plane_master/los_occluders)
 	client.screen.Add(p4)
 	client.screen.Add(new /obj/screen/lighting_backdrop)
 	client.screen.Add(new /obj/screen/plane_master/emissive)

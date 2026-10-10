@@ -10,7 +10,7 @@
 	set name = "Pull"
 	set category = "Object"
 
-	if(AM.Adjacent(src))
+	if(AM && AM.Adjacent(src))
 		src.start_pulling(AM)
 
 		return
@@ -303,13 +303,30 @@ default behaviour is:
 /mob/living/proc/getStaminaLoss()//Stamina shit.
 	return staminaloss
 
-/mob/living/proc/adjustStaminaLoss(var/amount)
+// Every action that costs stamina also builds fatigue; passive upkeep ticks pass passive = TRUE to skip it.
+#define FATIGUE_PER_STAMINA 0.25
+
+/mob/living/proc/adjustStaminaLoss(var/amount, var/passive = FALSE)
 	if(status_flags & GODMODE)	return 0
 	staminaloss = min(max(staminaloss + amount, 0),(maxHealth*2))
+	if(!passive && amount > 0)
+		fatigue = Clamp(fatigue + amount * FATIGUE_PER_STAMINA, 0, max_fatigue)
 
 /mob/living/proc/setStaminaLoss(var/amount)
 	if(status_flags & GODMODE)	return 0
 	staminaloss = amount
+
+/mob/living/proc/update_stamina_hud()
+	if(!stamina_icon)
+		return
+	var/current_fatigue = Clamp(fatigue, 0, max_fatigue)
+	var/fatigue_level = round(min(current_fatigue, 50) * 10 / 50)
+	stamina_icon.icon_state = "fatigue[10 - Clamp(fatigue_level, 0, 10)]"
+	stamina_icon.cut_overlays()
+	if(current_fatigue > 50 && max_fatigue > 50)
+		var/overfatigue_level = round((current_fatigue - 50) * 10 / (max_fatigue - 50))
+		overfatigue_level = Clamp(overfatigue_level, 1, 10)
+		stamina_icon.add_overlay(image(stamina_icon.icon, "overfatigue[overfatigue_level]"))
 
 /mob/living/proc/getBrainLoss()
 	return 0
@@ -341,41 +358,41 @@ default behaviour is:
 	return
 
 //Recursive function to find everything a mob is holding.
-/mob/living/get_contents(var/obj/item/weapon/storage/Storage = null)
+/mob/living/get_contents(var/obj/item/storage/Storage = null)
 	var/list/L = list()
 
 	if(Storage) //If it called itself
 		L += Storage.return_inv()
 
 		//Leave this commented out, it will cause storage items to exponentially add duplicate to the list
-		//for(var/obj/item/weapon/storage/S in Storage.return_inv()) //Check for storage items
+		//for(var/obj/item/storage/S in Storage.return_inv()) //Check for storage items
 		//	L += get_contents(S)
 
 		for(var/obj/item/weapon/gift/G in Storage.return_inv()) //Check for gift-wrapped items
 			L += G.gift
-			if(istype(G.gift, /obj/item/weapon/storage))
+			if(istype(G.gift, /obj/item/storage))
 				L += get_contents(G.gift)
 
 		for(var/obj/item/smallDelivery/D in Storage.return_inv()) //Check for package wrapped items
 			L += D.wrapped
-			if(istype(D.wrapped, /obj/item/weapon/storage)) //this should never happen
+			if(istype(D.wrapped, /obj/item/storage)) //this should never happen
 				L += get_contents(D.wrapped)
 		return L
 
 	else
 
 		L += src.contents
-		for(var/obj/item/weapon/storage/S in src.contents)	//Check for storage items
+		for(var/obj/item/storage/S in src.contents)	//Check for storage items
 			L += get_contents(S)
 
 		for(var/obj/item/weapon/gift/G in src.contents) //Check for gift-wrapped items
 			L += G.gift
-			if(istype(G.gift, /obj/item/weapon/storage))
+			if(istype(G.gift, /obj/item/storage))
 				L += get_contents(G.gift)
 
 		for(var/obj/item/smallDelivery/D in src.contents) //Check for package wrapped items
 			L += D.wrapped
-			if(istype(D.wrapped, /obj/item/weapon/storage)) //this should never happen
+			if(istype(D.wrapped, /obj/item/storage)) //this should never happen
 				L += get_contents(D.wrapped)
 		return L
 
@@ -666,9 +683,14 @@ default behaviour is:
 		else
 			adjustStaminaLoss(-1)
 
-	if(m_intent == "run" && staminaloss < 50)
-		adjustStaminaLoss(1)
-	else
+	var/is_sprinting = FALSE
+	if(ishuman(src))
+		var/mob/living/carbon/human/H = src
+		is_sprinting = H.sprinting
+
+	if(!is_sprinting && m_intent == "run" && staminaloss < 50)
+		adjustStaminaLoss(1, TRUE)
+	else if(!is_sprinting)
 		adjustStaminaLoss(-2)
 
 	if(staminaloss >= STAMINA_EXHAUST && !stat)//Oh shit we've lost too much stamina and now we're tired!
@@ -702,7 +724,7 @@ default behaviour is:
 
 /mob/living/proc/process_resist()
 	//Getting out of someone's inventory.
-	if(istype(src.loc, /obj/item/weapon/holder))
+	if(istype(src.loc, /obj/item/holder))
 		escape_inventory(src.loc)
 		return
 
@@ -717,7 +739,7 @@ default behaviour is:
 		spawn() C.mob_breakout(src)
 		return TRUE
 
-/mob/living/proc/escape_inventory(obj/item/weapon/holder/H)
+/mob/living/proc/escape_inventory(obj/item/holder/H)
 	if(H != src.loc) return
 
 	var/mob/M = H.loc //Get our mob holder (if any).
@@ -729,7 +751,7 @@ default behaviour is:
 
 		// Update whether or not this mob needs to pass emotes to contents.
 		for(var/atom/A in M.contents)
-			if(istype(A,/mob/living/simple_animal/borer) || istype(A,/obj/item/weapon/holder))
+			if(istype(A,/mob/living/simple_animal/borer) || istype(A,/obj/item/holder))
 				return
 		M.status_flags &= ~PASSEMOTES
 	else if(istype(H.loc,/obj/item/clothing/accessory/holster))
@@ -758,14 +780,21 @@ default behaviour is:
 			return
 
 /mob/living/proc/resist_grab()
-	var/resisting = 0
 	if(grabbed_by == src)
 		return
+	var/list/grabs_to_resist = list()
 	for(var/obj/item/grab/G in grabbed_by)
-		resisting++
-		G.handle_resist()
-	if(resisting)
-		visible_message("<span class='danger'>[src] tries to resist!</span>")
+		grabs_to_resist += G
+	if(!grabs_to_resist.len)
+		return
+
+	visible_message(
+		"<span class='danger'>[src] tries to resist!</span>",
+		"<span class='warning'>You try to resist!</span>"
+	)
+	for(var/obj/item/grab/G in grabs_to_resist)
+		if(G && !QDELETED(G))
+			G.handle_resist()
 
 /mob/living/verb/lay_down()
 	set name = "Rest"

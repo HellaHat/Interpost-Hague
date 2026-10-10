@@ -51,6 +51,7 @@
 	var/obj/screen/surrender = null
 	var/obj/screen/happiness_icon = null
 	var/obj/screen/wield_icon = null
+	var/obj/screen/readycd = null
 
 	var/obj/screen/noise2 = null//unused
 	var/obj/screen/noise3 = null//unused
@@ -132,7 +133,7 @@
 	var/obj/item/l_hand = null//Living
 	var/obj/item/r_hand = null//Living
 	var/obj/item/weapon/back = null//Human/Monkey
-	var/obj/item/weapon/storage/s_active = null//Carbon
+	var/obj/item/storage/s_active = null//Carbon
 	var/obj/item/clothing/mask/wear_mask = null//Carbon
 
 	///Whether the mob is updating glide size when movespeed updates or not

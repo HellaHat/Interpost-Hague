@@ -72,7 +72,7 @@
 
 	// ID card stuff.
 	var/default_access = list()
-	var/id_type = /obj/item/weapon/card/id
+	var/id_type = /obj/item/card/id
 
 	var/antag_text = "You are an antagonist! Within the rules, \
 		try to act as an opposing force to the crew. Further RP and try to make sure \
@@ -263,8 +263,8 @@
 	if(!HH)
 		if(player && player.current && istype(player.current, /mob/living/carbon/human))
 			HH = player.current
-	if(HH && HH.religion != LEGAL_RELIGION)
-		log_debug("[player.key] was selected for [role_text] by lottery, but they are not of the legal religion.")
+	if(HH && is_cult_religion(HH.religion) && get_cult_by_religion(HH.religion) != src)
+		log_debug("[player.key] was selected for [role_text] by lottery, but they already follow [HH.religion].")
 		return 0
 
 	pending_antagonists |= player

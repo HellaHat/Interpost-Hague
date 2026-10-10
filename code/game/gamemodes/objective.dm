@@ -140,7 +140,7 @@ var/global/list/all_objectives = list()
 
 	check_completion()
 		if(target && target.current && istype(target,/mob/living/carbon/human))
-			var/obj/item/weapon/card/id/I = target.current:wear_id
+			var/obj/item/card/id/I = target.current:wear_id
 			if(istype(I, /obj/item/device/pda))
 				var/obj/item/device/pda/P = I
 				I = P.id
@@ -411,32 +411,32 @@ var/global/list/all_objectives = list()
 	var/global/possible_items[] = list(
 		"the captain's antique laser gun" = /obj/item/weapon/gun/energy/captain,
 		"a bluespace rift generator" = /obj/item/integrated_circuit/manipulation/bluespace_rift,
-		"an RCD" = /obj/item/weapon/rcd,
-		"a jetpack" = /obj/item/weapon/tank/jetpack,
+		"an RCD" = /obj/item/rcd,
+		"a jetpack" = /obj/item/tank/jetpack,
 		"a captain's jumpsuit" = /obj/item/clothing/under/rank/captain,
-		"a functional AI" = /obj/item/weapon/aicard,
+		"a functional AI" = /obj/item/aicard,
 		"a pair of magboots" = /obj/item/clothing/shoes/magboots,
 		"the [station_name()] blueprints" = /obj/item/blueprints,
 		"a nasa voidsuit" = /obj/item/clothing/suit/space/void,
-		"28 moles of phoron (full tank)" = /obj/item/weapon/tank,
+		"28 moles of phoron (full tank)" = /obj/item/tank,
 		"a sample of slime extract" = /obj/item/slime_extract,
-		"a piece of corgi meat" = /obj/item/weapon/reagent_containers/food/snacks/meat/corgi,
+		"a piece of corgi meat" = /obj/item/reagent_containers/food/snacks/meat/corgi,
 		"a research director's jumpsuit" = /obj/item/clothing/under/rank/research_director,
 		"a chief engineer's jumpsuit" = /obj/item/clothing/under/rank/chief_engineer,
 		"a chief medical officer's jumpsuit" = /obj/item/clothing/under/rank/chief_medical_officer,
 		"a head of security's jumpsuit" = /obj/item/clothing/under/rank/head_of_security,
 		"a head of personnel's jumpsuit" = /obj/item/clothing/under/rank/head_of_personnel,
-		"the hypospray" = /obj/item/weapon/reagent_containers/hypospray,
-		"the captain's pinpointer" = /obj/item/weapon/pinpointer,
+		"the hypospray" = /obj/item/reagent_containers/hypospray,
+		"the captain's pinpointer" = /obj/item/pinpointer,
 		"an ablative armor vest" = /obj/item/clothing/suit/armor/laserproof,
 	)
 
 	var/global/possible_items_special[] = list(
-		/*"nuclear authentication disk" = /obj/item/weapon/disk/nuclear,*///Broken with the change to nuke disk making it respawn on z level change.
+		/*"nuclear authentication disk" = /obj/item/disk/nuclear,*///Broken with the change to nuke disk making it respawn on z level change.
 		"nuclear gun" = /obj/item/weapon/gun/energy/gun/nuclear,
-		"diamond drill" = /obj/item/weapon/pickaxe/diamonddrill,
-		"bag of holding" = /obj/item/weapon/storage/backpack/holding,
-		"hyper-capacity cell" = /obj/item/weapon/cell/hyper,
+		"diamond drill" = /obj/item/pickaxe/diamonddrill,
+		"bag of holding" = /obj/item/storage/backpack/holding,
+		"hyper-capacity cell" = /obj/item/cell/hyper,
 		"10 diamonds" = /obj/item/stack/material/diamond,
 		"50 gold bars" = /obj/item/stack/material/gold,
 		"25 refined uranium bars" = /obj/item/stack/material/uranium,
@@ -519,7 +519,7 @@ var/global/list/all_objectives = list()
 			return 0
 
 		var/current_amount
-		var/obj/item/weapon/rig/S
+		var/obj/item/rig/S
 		if(istype(owner.current,/mob/living/carbon/human))
 			var/mob/living/carbon/human/H = owner.current
 			S = H.back
@@ -791,6 +791,13 @@ var/global/list/all_objectives = list()
 		return 1
 	return 0
 
+/datum/objective/cult
+	var/datum/antagonist/cultist/cult
+
+/datum/objective/cult/New(text, datum/antagonist/cultist/owning_cult = null)
+	cult = owning_cult ? owning_cult : GLOB.cult
+	..(text)
+
 /datum/objective/cult/survive
 	explanation_text = "Our knowledge must live on."
 	target_amount = 5
@@ -801,39 +808,42 @@ var/global/list/all_objectives = list()
 
 /datum/objective/cult/survive/check_completion()
 	var/acolytes_survived = 0
-	if(!GLOB.cult)
+	if(!cult)
 		return 0
-	for(var/datum/mind/cult_mind in GLOB.cult.current_antagonists)
+	for(var/datum/mind/cult_mind in cult.current_antagonists)
 		if (cult_mind.current && cult_mind.current.stat!=2)
 			var/area/A = get_area(cult_mind.current )
 			if (is_type_in_list(A, GLOB.using_map.post_round_safe_areas))
 				acolytes_survived++
-	if(acolytes_survived >= target_amount)
-		return 0
-	else
-		return 1
+	return acolytes_survived >= target_amount
 
 /datum/objective/cult/eldergod
-	explanation_text = "Summon Nar-Sie via the use of the appropriate rune (Hell join self). It will only work if nine cultists stand on and around it. The convert rune is join blood self."
+	explanation_text = "Summon your deity with a Tear Reality rune after completing both sacrifice objectives. Nine conscious members of your cult, including constructs, must remain within one tile of the rune for 45 seconds."
+
+/datum/objective/cult/eldergod/New()
+	..()
+	explanation_text = "Summon [cult.entity_name] with a Tear Reality rune after completing both sacrifice objectives. Nine conscious members of [cult.religion_name], including constructs, must remain within one tile of the rune for 45 seconds. Rival cultists do not count."
 
 /datum/objective/cult/eldergod/check_completion()
-	return (locate(/obj/singularity/narsie/large) in SSmachines.machinery)
+	for(var/obj/singularity/narsie/large/deity in narsie_list)
+		if(deity.cult == cult && deity.type == cult.deity_type)
+			return TRUE
+	return FALSE
 
 /datum/objective/cult/sacrifice
 	explanation_text = "Conduct a ritual sacrifice for the glory of Nar-Sie."
 
 /datum/objective/cult/sacrifice/find_target()
 	var/list/possible_targets = list()
-	if(!possible_targets.len)
-		for(var/mob/living/carbon/human/player in GLOB.player_list)
-			if(player.mind && !(player.mind in GLOB.cult.current_antagonists))
-				possible_targets += player.mind
+	for(var/mob/living/carbon/human/player in GLOB.player_list)
+		if(player.mind && !(player.mind in cult.current_antagonists) && !(player.mind in cult.sacrifice_targets))
+			possible_targets += player.mind
 	if(possible_targets.len > 0)
 		target = pick(possible_targets)
-	if(target) explanation_text = "Sacrifice [target.name], the [target.assigned_role]. You will need the sacrifice rune (Hell blood join) and three acolytes to do so."
+	if(target) explanation_text = "Sacrifice [target.name], the [target.assigned_role], on an Offering rune. Three conscious members of your cult must remain at the rune until the target dies."
 
 /datum/objective/cult/sacrifice/check_completion()
-	return (target && GLOB.cult && !GLOB.cult.sacrificed.Find(target))
+	return target && cult && (target in cult.sacrificed)
 
 /datum/objective/rev/find_target()
 	..()
@@ -885,6 +895,6 @@ var/global/list/all_objectives = list()
 			return 1
 
 		for(var/mob/living/carbon/human/H in world)
-			if(H.religion == LEGAL_RELIGION && H.stat == 2)
+			if(H.religion_is_legal() && H.stat == 2)
 				return 1
 		return 0

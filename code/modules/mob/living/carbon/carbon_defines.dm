@@ -17,6 +17,7 @@
 	var/datum/reagents/metabolism/bloodstr = null
 	var/datum/reagents/metabolism/touching = null
 	var/losebreath = 0 //if we failed to breathe last tick
+	var/holding_breath = FALSE
 
 	var/coughedtime = null
 
@@ -24,7 +25,7 @@
 	var/lastpuke = 0
 	var/nutrition = 400
 
-	var/obj/item/weapon/tank/internal = null//Human/Monkey
+	var/obj/item/tank/internal = null//Human/Monkey
 
 
 	//these two help govern taste. The first is the last time a taste message was shown to the plaer.
@@ -44,5 +45,7 @@
 
 	var/list/stasis_sources = list()
 	var/stasis_value
+	var/voluntary_sleeping = FALSE
+	var/waking_up = FALSE
 	var/social_class = null
 	var/in_bed = null

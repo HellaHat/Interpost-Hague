@@ -11,6 +11,17 @@
 	var/light_power    // Intensity of the emitter light.
 	var/light_range      // The range of the emitted light.
 	var/light_color    // The colour of the light, string, decomposed by parse_light_color()
+	var/light_cone_angle
+	var/light_cone_dir
+	var/light_glow_range
+	var/light_cone_target_x
+	var/light_cone_target_y
+	var/cone_target_x
+	var/cone_target_y
+	var/cone_target_dist
+	var/cone_unit_x
+	var/cone_unit_y
+	var/cone_update = FALSE
 
 	// Variables for keeping track of the colour.
 	var/lum_r
@@ -56,6 +67,11 @@
 	light_power = source_atom.light_power
 	light_range = source_atom.light_range
 	light_color = source_atom.light_color
+	light_cone_angle = source_atom.light_cone_angle
+	light_cone_dir = source_atom.light_cone_dir
+	light_glow_range = source_atom.light_glow_range
+	light_cone_target_x = source_atom.light_cone_target_x
+	light_cone_target_y = source_atom.light_cone_target_y
 
 	parse_light_color()
 
@@ -135,6 +151,9 @@
 	else if(top_atom.loc != source_turf)
 		source_turf = top_atom.loc
 		. = 1
+	if(!source_turf)
+		destroy()
+		return 1
 
 	if(source_atom.light_power != light_power)
 		light_power = source_atom.light_power
@@ -146,6 +165,15 @@
 
 	if(light_range && light_power && !applied)
 		. = 1
+
+	if(source_atom.light_cone_angle != light_cone_angle || source_atom.light_cone_dir != light_cone_dir || source_atom.light_glow_range != light_glow_range || source_atom.light_cone_target_x != light_cone_target_x || source_atom.light_cone_target_y != light_cone_target_y)
+		light_cone_angle = source_atom.light_cone_angle
+		light_cone_dir = source_atom.light_cone_dir
+		light_glow_range = source_atom.light_glow_range
+		light_cone_target_x = source_atom.light_cone_target_x
+		light_cone_target_y = source_atom.light_cone_target_y
+		cone_update = TRUE
+		prepare_cone()
 
 	if(source_atom.light_color != light_color)
 		light_color = source_atom.light_color
@@ -170,7 +198,7 @@
 // The braces and semicolons are there to be able to do this on a single line.
 
 #define APPLY_CORNER(C)              \
-	. = LUM_FALLOFF(C, source_turf); \
+	. = light_cone_angle ? cone_falloff(C) : LUM_FALLOFF(C, source_turf); \
 	. *= light_power/2;              \
 	effect_str[C] = .;               \
 	C.update_lumcount                \
@@ -205,9 +233,69 @@
 #define LUM_FALLOFF(C, T) (1 - CLAMP01((GET_LUM_DIST(abs(C.x - T.x), abs(C.y - T.y))) / max(1, light_range+1)))
 #endif
 
+/datum/light_source/proc/prepare_cone()
+	cone_target_dist = 0
+	if(!light_cone_angle || !source_turf)
+		return
+	cone_target_x = light_cone_target_x
+	cone_target_y = light_cone_target_y
+	if(isnull(cone_target_x) || isnull(cone_target_y))
+		cone_target_x = source_turf.x + sin(light_cone_dir) * light_range
+		cone_target_y = source_turf.y + cos(light_cone_dir) * light_range
+	var/target_dx = cone_target_x - source_turf.x
+	var/target_dy = cone_target_y - source_turf.y
+	cone_target_dist = sqrt(target_dx * target_dx + target_dy * target_dy)
+	if(!cone_target_dist)
+		return
+	if(cone_target_dist > light_range)
+		target_dx = target_dx / cone_target_dist * light_range
+		target_dy = target_dy / cone_target_dist * light_range
+		cone_target_x = source_turf.x + target_dx
+		cone_target_y = source_turf.y + target_dy
+		cone_target_dist = light_range
+	cone_unit_x = target_dx / cone_target_dist
+	cone_unit_y = target_dy / cone_target_dist
+
+/datum/light_source/proc/cone_falloff(datum/lighting_corner/C)
+	var/dx = C.x - source_turf.x
+	var/dy = C.y - source_turf.y
+	. = 0
+	var/glow_dist_squared = dx * dx + dy * dy
+	if(light_glow_range && (light_glow_range < 0 || glow_dist_squared < light_glow_range * light_glow_range))
+		. = 1 - CLAMP01(sqrt(glow_dist_squared) / light_glow_range)
+	if(!cone_target_dist)
+		return
+	var/along = dx * cone_unit_x + dy * cone_unit_y
+	var/across = abs(dx * cone_unit_y - dy * cone_unit_x)
+	var/beam_width = 0.35 + 0.75 * CLAMP01(along / cone_target_dist)
+	var/beam = 0
+	if(along >= 0 && along <= cone_target_dist && across < beam_width)
+		beam = 0.75 * (1 - across / beam_width)
+	var/spot_dist_x = C.x - cone_target_x
+	var/spot_dist_y = C.y - cone_target_y
+	var/spot_dist_squared = spot_dist_x * spot_dist_x + spot_dist_y * spot_dist_y
+	var/spot = 0
+	if(spot_dist_squared < 1.4 * 1.4)
+		spot = 1 - CLAMP01(sqrt(spot_dist_squared) / 1.4)
+	. = max(., beam, spot)
+
+/datum/light_source/proc/update_cone_lum()
+	// Aiming changes intensity, not visibility or corner membership.
+	for(var/datum/lighting_corner/C in effect_str)
+		var/strength = 0
+		if(C.active)
+			strength = light_cone_angle ? cone_falloff(C) : LUM_FALLOFF(C, source_turf)
+			strength *= light_power / 2
+		var/delta = strength - effect_str[C]
+		if(!delta)
+			continue
+		effect_str[C] = strength
+		C.update_lumcount(delta * applied_lum_r, delta * applied_lum_g, delta * applied_lum_b)
+
 /datum/light_source/proc/apply_lum()
 	var/static/update_gen = 1
 	applied = 1
+	prepare_cone()
 
 	// Keep track of the last applied lum values so that the lighting can be reversed
 	applied_lum_r = lum_r
@@ -216,6 +304,8 @@
 
 	FOR_DVIEW(var/turf/T, light_range, source_turf, INVISIBILITY_LIGHTING)
 		check_t:
+		if(!T)
+			continue
 		if(!T.lighting_corners_initialised)
 			T.generate_missing_corners()
 
@@ -240,7 +330,7 @@
 		T.affecting_lights += src
 		affecting_turfs    += T
 
-		if (T.z_flags & ZM_ALLOW_LIGHTING)
+		if ((T.z_flags & ZM_ALLOW_LIGHTING) && T.below)
 			T = T.below
 			goto check_t
 

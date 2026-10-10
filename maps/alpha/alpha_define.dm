@@ -14,16 +14,16 @@
 
 	allowed_spawns = list("Cryogenic Storage", "Cryogenic Storage Captain")
 
-	station_name  = "KS Gorodok-3"
-	station_short = "Gorodok"
+	station_name  = "NT-Vesper-13"
+	station_short = "NT-Vesper-13"
 	dock_name     = "Gnezdo"
-	boss_name     = "TETRACORP DIAGNOSTICS SUBROUTINE"
-	boss_short    = "TTC-D-S"
-	company_name  = "TetraCorp"
-	company_short = "TTC"
+	boss_name     = "NANOTRASEN CORPORATE COMMAND"
+	boss_short    = "NT"
+	company_name  = "Nanotrasen"
+	company_short = "NT"
 	system_name = "Algol, Beta Persei"
 
-	map_admin_faxes = list("TETRACORP MAIL SUBROUTINE")
+	map_admin_faxes = list("NANOTRASEN MAIL SUBROUTINE")
 
 	shuttle_docked_message = " has docked with the station. Command staff is prioritised."
 	shuttle_leaving_dock = "The Spiteful has departed from home dock."
@@ -35,6 +35,12 @@
 	emergency_shuttle_recall_message = "The Spiteful emergency escape shuttle has been recalled. Continuous wasting of resources may result in the crew's termination."
 
 	evac_controller_type = /datum/evacuation_controller/shuttle
+
+/datum/map/alpha/setup_map()
+	var/station_designation = pick("Vesper", "Aquila", "Bellatrix", "Cygni", "Draco", "Erebus", "Helios", "Kepler", "Orion", "Sagan", "Sirius", "Valkyrie")
+	station_name = "NT-[station_designation]-13"
+	station_short = station_name
+	..()
 
 /datum/map/alpha/perform_map_generation()
 	new /datum/random_map/automata/cave_system(null,1,1,1,200, 200) // Create the mining Z-level.

@@ -10,9 +10,17 @@
 	throwforce = 10
 	hitsound = 'sound/weapons/bladeslice.ogg'
 	attack_verb = list("attacked", "slashed", "stabbed", "sliced", "torn", "ripped", "diced", "cut")
+	var/datum/antagonist/cultist/cult
+
+/obj/item/weapon/melee/cultblade/New(loc, datum/antagonist/cultist/owning_cult = null)
+	cult = owning_cult ? owning_cult : GLOB.cult
+	..()
+	if(cult != GLOB.cult)
+		color = cult.theme_color
+	desc = "An arcane weapon wielded by the followers of [cult.entity_name]."
 
 /obj/item/weapon/melee/cultblade/attack(mob/living/M, mob/living/user, var/target_zone)
-	if(iscultist(user) || (user.mind in GLOB.godcult.current_antagonists))
+	if(same_cult(user, cult) || (user.mind in GLOB.godcult.current_antagonists))
 		return ..()
 
 	var/zone = (user.hand ? BP_L_ARM : BP_R_ARM)
@@ -40,7 +48,7 @@
 	return 1
 
 /obj/item/weapon/melee/cultblade/pickup(mob/living/user as mob)
-	if(!iscultist(user))
+	if(!same_cult(user, cult))
 		to_chat(user, "<span class='warning'>An overwhelming feeling of dread comes over you as you pick up the cultist's sword. It would be wise to be rid of this blade quickly.</span>")
 		user.make_dizzy(120)
 
@@ -72,7 +80,7 @@
 	desc = "A set of durable robes worn by the followers of Nar-Sie."
 	icon_state = "cultrobes"
 	body_parts_covered = UPPER_TORSO|LOWER_TORSO|LEGS|ARMS
-	allowed = list(/obj/item/weapon/book/tome,/obj/item/weapon/melee/cultblade)
+	allowed = list(/obj/item/book/tome,/obj/item/weapon/melee/cultblade)
 	armor = list(melee = 35, bullet = 30, laser = 25,energy = 20, bomb = 25, bio = 10, rad = 0)
 	flags_inv = HIDEJUMPSUIT
 	siemens_coefficient = 0.6
@@ -110,7 +118,7 @@
 	name = "cult armour"
 	icon_state = "cult_armour"
 	desc = "A bulky suit of armour, bristling with spikes. It looks space proof."
-	allowed = list(/obj/item/weapon/book/tome,/obj/item/weapon/melee/cultblade,/obj/item/weapon/tank,/obj/item/device/suit_cooling_unit)
+	allowed = list(/obj/item/book/tome,/obj/item/weapon/melee/cultblade,/obj/item/tank,/obj/item/device/suit_cooling_unit)
 	armor = list(melee = 60, bullet = 50, laser = 60,energy = 15, bomb = 30, bio = 100, rad = 30)
 	siemens_coefficient = 0.2
 	body_parts_covered = UPPER_TORSO|LOWER_TORSO|LEGS|ARMS|HANDS

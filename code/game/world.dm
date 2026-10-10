@@ -514,6 +514,40 @@ var/world_topic_spam_protect_time = world.timeofday
 	fdel(F)
 	F << "[the_value]"
 
+/hook/startup/proc/loadRoleDebugMode()
+	world.load_role_debug_mode()
+	return 1
+
+/world/proc/load_role_debug_mode()
+	if(!fexists("data/roledebugmode.txt"))
+		return
+
+	var/list/Lines = file2list("data/roledebugmode.txt")
+	if(Lines.len && Lines[1])
+		GLOB.role_debug_mode = text2num(Lines[1])
+		log_misc("Saved role debug mode is '[GLOB.role_debug_mode]'")
+
+/world/proc/save_role_debug_mode(var/the_value)
+	var/F = file("data/roledebugmode.txt")
+	fdel(F)
+	F << "[the_value]"
+
+/hook/startup/proc/loadTTSMode()
+	world.load_tts_enabled()
+	return 1
+
+/world/proc/load_tts_enabled()
+	if(!fexists("data/tts_enabled.txt"))
+		return
+	var/list/lines = file2list("data/tts_enabled.txt")
+	if(lines.len)
+		GLOB.tts_enabled = text2num(lines[1]) == 1
+
+/world/proc/save_tts_enabled()
+	var/save_file = file("data/tts_enabled.txt")
+	fdel(save_file)
+	save_file << "[GLOB.tts_enabled]"
+
 /hook/startup/proc/loadMOTD()
 	world.load_motd()
 	return 1

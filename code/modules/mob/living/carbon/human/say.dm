@@ -23,6 +23,14 @@
 	message = sanitize(message)
 	var/obj/item/organ/internal/voicebox/vox = locate() in internal_organs
 	var/snowflake_speak = (speaking && (speaking.flags & NONVERBAL|SIGNLANG)) || (vox && vox.is_usable() && (speaking in vox.assists_languages))
+	if(!(speaking && (speaking.flags & (NONVERBAL|SIGNLANG))))
+		if(mouth_item)
+			to_chat(src, "<span class='warning'>You can't speak with \the [mouth_item] in your mouth!</span>")
+			return
+		var/obj/item/grab/mouth_cover/mouth_grab = get_mouth_cover_grab()
+		if(mouth_grab)
+			to_chat(src, "<span class='warning'>[mouth_grab.assailant]'s hand is clamped over your mouth!</span>")
+			return
 	if(!isSynthetic() && need_breathe() && failed_last_breath && !snowflake_speak)
 		var/obj/item/organ/internal/lungs/L = internal_organs_by_name[species.breathing_organ]
 		if(L.breath_fail_ratio > 0.9)
@@ -103,8 +111,8 @@
 /mob/living/carbon/human/GetVoice()
 
 	var/voice_sub
-	if(istype(back,/obj/item/weapon/rig))
-		var/obj/item/weapon/rig/rig = back
+	if(istype(back,/obj/item/rig))
+		var/obj/item/rig/rig = back
 		// todo: fix this shit
 		if(rig.speech && rig.speech.voice_holder && rig.speech.voice_holder.active && rig.speech.voice_holder.voice)
 			voice_sub = rig.speech.voice_holder.voice

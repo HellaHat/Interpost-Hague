@@ -1,7 +1,5 @@
 /mob/living/carbon/human/examine(mob/user)
 	if(!isobserver(user))
-		user.visible_message("<span class='looksatbold'>[usr]</span> <span class='looksat'>looks at [src].</span>")
-
 		if(get_dist(user,src) > 5)//Don't get descriptions of things far away.
 			to_chat(user, "<span class='info'>It's too far away to see clearly.</span>")
 			return
@@ -180,7 +178,7 @@
 			msg += "<span class='warning'><b>\"[branded]\" IS BRANDED ON THEIR FACE!</b></span>"
 			if(ishuman(user))
 				var/mob/living/carbon/human/H = user
-				if(H.religion == LEGAL_RELIGION && H != src && branded == "HERETIC")
+				if(H.religion_is_legal() && H != src && branded == "HERETIC")
 					msg += "<span class='notice'> Viewing such a spectacle fills you with pleasure.</span>"
 					H.add_event("punishedheretic", /datum/happiness_event/punished_heretic)
 				else
@@ -238,7 +236,7 @@
 	msg += "</span>"
 
 	var/ssd_msg = species.get_ssd(src)
-	if(ssd_msg && (!should_have_organ(BP_BRAIN) || has_brain()) && stat != DEAD)
+	if(ssd_msg && ssd_check() && (!should_have_organ(BP_BRAIN) || has_brain()) && stat != DEAD)
 		if(!key)
 			msg += "<span class='deadsay'>[T.He] [T.is] [ssd_msg]. It doesn't look like [T.he] [T.is] waking up anytime soon.</span>\n"
 		else if(!client)
@@ -347,7 +345,7 @@
 		var/criminal = "None"
 
 		if(wear_id)
-			var/obj/item/weapon/card/id/I = wear_id.GetIdCard()
+			var/obj/item/card/id/I = wear_id.GetIdCard()
 			if(I)
 				perpname = I.registered_name
 			else
@@ -368,7 +366,7 @@
 		var/medical = "None"
 
 		if(wear_id)
-			if(istype(wear_id,/obj/item/weapon/card/id))
+			if(istype(wear_id,/obj/item/card/id))
 				perpname = wear_id:registered_name
 			else if(istype(wear_id,/obj/item/device/pda))
 				var/obj/item/device/pda/tempPda = wear_id
@@ -472,4 +470,3 @@
 	HTML +="<a href='?src=\ref[src];flavor_change=done'>\[Done\]</a>"
 	HTML += "<tt>"
 	src << browse(jointext(HTML,null), "window=flavor_changes;size=430x300")
-

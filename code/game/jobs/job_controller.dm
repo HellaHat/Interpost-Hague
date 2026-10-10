@@ -398,7 +398,7 @@ var/global/datum/controller/occupations/job_master
 		return 1
 
 
-	proc/EquipRank(mob/living/carbon/human/H, rank, joined_late = 0)
+	proc/EquipRank(mob/living/carbon/human/H, rank, joined_late = 0, no_starting_equipment = FALSE)
 		if(!H || QDELETED(H))	return null
 
 		if(SSticker.eof && H.mind)
@@ -415,17 +415,25 @@ var/global/datum/controller/occupations/job_master
 
 		var/datum/job/job = GetJob(rank)
 		var/list/spawn_in_storage = list()
+		if(no_starting_equipment)
+			H.clear_preference_starting_gear()
 
 		if(job)
 
+			H.social_class = job.social_class
+			if(!H.job_character_initialized)
+				job.initialize_character(H)
+				H.job_character_initialized = TRUE
+
 			//Equip job items.
 			job.setup_account(H)
-			job.equip(H, H.mind ? H.mind.role_alt_title : "", H.char_branch, H.char_rank)
+			if(!no_starting_equipment)
+				job.equip(H, H.mind ? H.mind.role_alt_title : "", H.char_branch, H.char_rank)
 			job.apply_fingerprints(H)
 
 			// Equip custom gear loadout, replacing any job items
 			var/list/loadout_taken_slots = list()
-			if(H.client && H.client.prefs && H.client.prefs.Gear() && job.loadout_allowed)
+			if(!no_starting_equipment && H.client && H.client.prefs && H.client.prefs.Gear() && job.loadout_allowed)
 				for(var/thing in H.client.prefs.Gear())
 					var/datum/gear/G = gear_datums[thing]
 					if(G)
@@ -450,7 +458,7 @@ var/global/datum/controller/occupations/job_master
 							loadout_taken_slots.Add(G.slot)
 
 			// do accessories last so they don't attach to a suit that will be replaced
-			if(H.char_rank && H.char_rank.accessory)
+			if(!no_starting_equipment && H.char_rank && H.char_rank.accessory)
 				for(var/accessory_path in H.char_rank.accessory)
 					var/list/accessory_data = H.char_rank.accessory[accessory_path]
 					if(islist(accessory_data))
@@ -468,6 +476,7 @@ var/global/datum/controller/occupations/job_master
 		else
 			to_chat(H, "Your job is [rank] and the game just can't handle it! Please report this bug to an administrator.")
 
+		H.equip_medical_bracelet()
 		H.job = rank
 
 		var/turf/greyhound_turf = (rank == "Greyhound") ? get_greyhound_spawn_turf() : null
@@ -483,7 +492,7 @@ var/global/datum/controller/occupations/job_master
 				var/datum/spawnpoint/spawnpoint = H.client ? get_spawnpoint_for(H.client, rank) : null
 				if(spawnpoint && spawnpoint.turfs && spawnpoint.turfs.len)
 					H.forceMove(pick(spawnpoint.turfs))
-					spawnpoint.after_join(H)
+					spawnpoint.after_join(H, roundstart = TRUE)
 				else
 					WARNING("Could not find an appropriate spawnpoint for job [rank].")
 
@@ -507,6 +516,8 @@ var/global/datum/controller/occupations/job_master
 		var/alt_title = null
 		if(H.mind)
 			H.mind.assigned_role = rank
+			for(var/obj/machinery/airlock_keypad/keypad in world)
+				keypad.grant_code_to_mind(H.mind)
 			alt_title = H.mind.role_alt_title
 
 			switch(rank)
@@ -537,7 +548,7 @@ var/global/datum/controller/occupations/job_master
 				spawn(50)
 					to_chat(H, "<B>.......<B> ")
 					spawn(50)
-						to_chat(H, "<B><span class = 'wakeup'>I should gather the officers for a meeting.</span> <span class = 'tetracorp'>TetraCorp</span><span class = 'wakeup'>'s bound to have sent us some new job to do...<B></span>")
+						to_chat(H, "<B><span class = 'wakeup'>I should gather the officers for a meeting.</span> <span class = 'nanotrasen'>Nanotrasen</span><span class = 'wakeup'>'s bound to have sent us some new job to do...<B></span>")
 		else if(job.wakeup_flavor)
 			spawn(20)
 				to_chat(H, "<B><span class = 'wakeup'>Wh-where am I?</B></span>")
@@ -553,9 +564,9 @@ var/global/datum/controller/occupations/job_master
 									to_chat(H, "<B>.......<B> ")
 									spawn(60)
 										if(H.mind.special_role == "Revolutionary" || H.mind.special_role == "Head Revolutionary")
-											to_chat(H, "<B><span class = 'wakeup'>Right, right...I'm a revolutionary working for </span><span class = 'tetracorp'>TetraCorp</span><span class = 'wakeup'>, but my true cause is Christianity.</span>")
+											to_chat(H, "<B><span class = 'wakeup'>Right, right...I'm a revolutionary working for </span><span class = 'nanotrasen'>Nanotrasen</span><span class = 'wakeup'>, but my true cause is Christianity.</span>")
 										else
-											to_chat(H, "<B><span class = 'wakeup'>Right, right...I'm [job.total_positions == 1 ? "the" : "a"] [alt_title ? alt_title : rank] working for </span><span class = 'tetracorp'>TetraCorp</span><span class = 'wakeup'> on one of their ''state of the art'' research outposts.</span>")
+											to_chat(H, "<B><span class = 'wakeup'>Right, right...I'm [job.total_positions == 1 ? "the" : "a"] [alt_title ? alt_title : rank] working for </span><span class = 'nanotrasen'>Nanotrasen</span><span class = 'wakeup'> on one of their ''state of the art'' research outposts.</span>")
 										spawn(20)
 											to_chat(H, "<B>.......<B>")
 											spawn(100)
@@ -618,7 +629,26 @@ var/global/datum/controller/occupations/job_master
 
 		if(H.religion)//In case they somehow don't have one.
 			H.mind.religion = H.religion
-			if(H.religion_is_legal())
+			if(is_cult_religion(H.religion))
+				var/datum/religion/faith = GLOB.all_religions[H.religion]
+				if(faith)
+					faith.followers |= H.mind.name
+				if(!H.mind.religion_antagonist_rolled)
+					H.mind.religion_antagonist_rolled = TRUE
+					var/datum/antagonist/cultist/cult = get_cult_by_religion(H.religion)
+					if(rand(1, 15) == 1 && !player_is_antag(H.mind) && cult.can_become_antag(H.mind))
+						cult.add_antagonist(H.mind, 0, 0, 0)
+				H.update_religion_magic()
+			else if(H.religion == HERETIC_RELIGION)
+				var/datum/religion/faith = GLOB.all_religions[H.religion]
+				if(faith)
+					faith.followers |= H.mind.name
+				if(!H.mind.religion_antagonist_rolled)
+					H.mind.religion_antagonist_rolled = TRUE
+					if(rand(1, 20) == 1 && !player_is_antag(H.mind) && GLOB.heretics.can_become_antag(H.mind))
+						GLOB.heretics.add_antagonist(H.mind, 0, 0, 0)
+				H.update_religion_magic()
+			else if(H.religion_is_legal())
 				var/datum/religion/LR = GLOB.all_religions[LEGAL_RELIGION]
 				if(istype(LR))
 					LR.followers += H.name // I don't think I want to save copies of the entire entity.
@@ -632,7 +662,7 @@ var/global/datum/controller/occupations/job_master
 				//Pick an old god other then the template
 				//to_world("RELIGION TESTING FIX THIS")
 				//H.religion = "Your god here"
-				H.religion = pick(GLOB.all_religions - ILLEGAL_RELIGION - LEGAL_RELIGION)
+				H.religion = pick(GLOB.all_religions - NARSIE_RELIGION - KHARIN_RELIGION - REAPER_RELIGION - HERETIC_RELIGION - LEGAL_RELIGION)
 				H.verbs += /mob/living/proc/make_shrine
 				H.verbs += /mob/living/proc/praise_god
 				var/datum/religion/HR = GLOB.all_religions[H.religion]
@@ -656,8 +686,11 @@ var/global/datum/controller/occupations/job_master
 					var/datum/old_god_spell/OGS = GLOB.all_spells[S]
 					if(istype(OGS) && OGS.old_god == H.religion)
 						pickable_spells += OGS
-				var/datum/old_god_spell/new_spell = pick(pickable_spells)
-				H.mind.store_memory("[new_spell.name] Incantation: \"[new_spell.phrase]\"")
+				if(pickable_spells.len)
+					var/datum/old_god_spell/new_spell = pick(pickable_spells)
+					H.mind.store_memory("[new_spell.name] Incantation: \"[new_spell.phrase]\"")
+				else
+					log_warning("No old-god spell was configured for [H.religion] while equipping [H].")
 
 		BITSET(H.hud_updateflag, ID_HUD)
 		BITSET(H.hud_updateflag, IMPLOYAL_HUD)

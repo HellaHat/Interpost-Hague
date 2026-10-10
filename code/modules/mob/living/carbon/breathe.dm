@@ -17,9 +17,10 @@
 	if(handle_drowning() || (is_asystole() && !(CE_STABLE in chem_effects) && active_breathe)) //crit aka circulatory shock
 		losebreath = max(2, losebreath + 1)
 
-	if(losebreath>0) //Suffocating so do not take a breath
-		losebreath--
-		if (prob(10) && !is_asystole() && active_breathe) //Gasp per 10 ticks? Sounds about right.
+	if(losebreath > 0 || holding_breath)
+		if(losebreath > 0)
+			losebreath--
+		if(!holding_breath && prob(10) && !is_asystole() && active_breathe) //Gasp per 10 ticks? Sounds about right.
 			emote("gasp")
 	else
 		//Okay, we can breathe, now check if we can get air
@@ -78,8 +79,8 @@
 
 //Handle possble chem smoke effect
 /mob/living/carbon/proc/handle_chemical_smoke(var/datum/gas_mixture/environment)
-	if(species && environment.return_pressure() < species.breath_pressure/5)
-		return //pressure is too low to even breathe in.
+	if(species && environment.get_tile_moles() < PRESSURE_TO_MOLES(species.breath_pressure/5))
+		return //Not enough gas to inhale the smoke.
 	if(wear_mask && (wear_mask.item_flags & ITEM_FLAG_BLOCK_GAS_SMOKE_EFFECT))
 		return
 

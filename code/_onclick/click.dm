@@ -44,6 +44,9 @@
 
 	next_click = world.time + 1
 
+	if(src.client)
+		src.client.magic_note_click(A)
+
 	var/list/modifiers = params2list(params)
 	// Handle right-clicks first so we can customize RMB behavior
 	if(modifiers["right"]) {
@@ -54,7 +57,25 @@
 				src.open_tile_context_menu(T, A, params)
 			return 1
 		}
+		if(modifiers["ctrl"]) {
+			LookFarClickOn(A)
+			return 1
+		}
+		var/obj/item/grab/mouth/bite_hold = A
+		if(istype(bite_hold) && isEquipped(bite_hold) && bite_hold.handle_hud_click(src, params))
+			return 1
+		if(ishuman(src))
+			var/mob/living/carbon/human/combat_user = src
+			if(combat_user.c_intent == I_GUARD)
+				combat_user.prepare_guard()
+				return 1
 		// Plain Right-Click -> call the new right-click interaction
+		if(istype(A, /obj/item))
+			var/obj/item/item = A
+			if(isEquipped(item))
+				if(canClick() && !stat && !restrained() && !stunned && !lying && !paralysis && !weakened && !sleeping)
+					item.worn_use(src)
+				return 1
 		if(A)
 			A.attack_hand_right(src)
 		return 1
@@ -94,6 +115,10 @@
 	if(stat || paralysis || stunned || weakened || sleeping)
 		return
 
+	var/obj/item/grab/mouth/bite_hold = A
+	if(istype(bite_hold) && isEquipped(bite_hold) && bite_hold.handle_hud_click(src, params))
+		return 1
+
 	face_atom(A) // change direction to face what you clicked on
 
 	switch_pointer()
@@ -121,6 +146,11 @@
 		throw_mode_off()
 
 	var/obj/item/W = get_active_hand()
+
+	var/obj/item/device/flashlight/aimed_light = W
+	if(istype(aimed_light) && aimed_light.can_aim(A, src))
+		aimed_light.aim_at(A, src, params)
+		return 1
 
 	if(W == A) // Handle attack_self
 
@@ -228,10 +258,9 @@
 	animals lunging, etc.
 */
 /mob/proc/RangedAttack(var/atom/A, var/params)
-	if(!mutations.len) return
 	if((LASER_EYES in mutations) && a_intent == I_HURT)
 		LaserEyes(A) // moved into a proc below
-	else if(TK in mutations)
+	else if(can_use_telekinesis() && prepare_telekinesis(A))
 		setClickCooldown(DEFAULT_ATTACK_COOLDOWN)
 		A.attack_tk(src)
 /*
@@ -288,6 +317,8 @@
 	return
 
 /atom/movable/CtrlClick(var/mob/user)
+	if(isliving(src))
+		return
 	if(Adjacent(user))
 		if (ishuman(user))
 			var/mob/living/carbon/human/H = user
@@ -560,11 +591,21 @@ var/const/CLICK_HANDLER_ALL                  = (~0)
 		src.visible_message(src, "<span class='danger'><b>[src]</b> crawls!</span>")
 		src.setClickCooldown(DEFAULT_ATTACK_COOLDOWN)
 
+/atom/proc/steal_act(mob/living/carbon/human/user)
+	return 0
+
+/atom/proc/bite_act(mob/living/carbon/human/user)
+	return 0
+
 /atom/proc/middle_click_intent_check(var/mob/M)
 	if(M.middle_click_intent == "kick")
 		return kick_act(M)
+	else if(M.middle_click_intent == "steal")
+		return steal_act(M)
 	else if(M.middle_click_intent == "jump")
-		jump_act(src, M)
+		return jump_act(src, M)
+	else if(M.middle_click_intent == "bite")
+		return bite_act(M)
 	else
 		M.swap_hand()
 

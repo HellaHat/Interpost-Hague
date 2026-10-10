@@ -22,6 +22,8 @@
 #define GRAB_TAKEDOWN       "takedown"
 #define GRAB_STRANGLE       "strangle"
 #define GRAB_WRENCH         "wrench"
+#define GRAB_MOUTH          "mouth"
+#define GRAB_MOUTH_COVER    "mouth cover"
 
 // Grab levels.
 #define NORM_PASSIVE    "normal passive"
@@ -73,6 +75,10 @@
 #define I_STRONG	"strong"
 #define I_QUICK	    "quick"
 #define I_DEFEND	"defense"
+#define I_WEAK		"weak"
+#define I_GUARD		"guard"
+#define I_DUAL		"dual"
+#define I_FEINT	"feint"
 #define I_DODGE		"dodge"
 #define I_PARRY		"parry"
 
@@ -122,8 +128,10 @@
 #define COMPANY_OPPOSED			"Opposed"
 
 #define LEGAL_RELIGION 			"Atheism"
-#define ILLEGAL_RELIGION 		"Old Gods"
-#define NARSIE_RELIGION			"Narsie"
+#define NARSIE_RELIGION			"Cult of Nar-Sie"
+#define HERETIC_RELIGION			"Forbidden Knowledge"
+#define KHARIN_RELIGION			"Cult of Kha'Rin"
+#define REAPER_RELIGION			"Cult of Mortality"
 
 #define COMPANY_ALIGNMENTS		list(COMPANY_LOYAL,COMPANY_SUPPORTATIVE,COMPANY_NEUTRAL,COMPANY_SKEPTICAL,COMPANY_OPPOSED)
 
@@ -231,6 +239,10 @@
 #define BP_HEAD   "head"
 #define BP_CHEST  "chest"
 #define BP_GROIN  "groin"
+// Selectable subzones that resolve to an existing external limb.
+#define BP_FACE   "face"
+#define BP_VITALS "vitals"
+#define BP_BELLY  "belly"
 #define BP_ALL_LIMBS list(BP_CHEST, BP_GROIN, BP_HEAD, BP_L_ARM, BP_R_ARM, BP_L_HAND, BP_R_HAND, BP_L_LEG, BP_R_LEG, BP_L_FOOT, BP_R_FOOT)
 #define BP_BY_DEPTH list(BP_HEAD, BP_L_HAND, BP_R_HAND, BP_L_ARM, BP_R_ARM, BP_L_FOOT, BP_R_FOOT, BP_L_LEG, BP_R_LEG, BP_GROIN, BP_CHEST)
 #define BP_BELOW_GROIN list(BP_GROIN, BP_L_FOOT, BP_R_FOOT, BP_L_LEG, BP_R_LEG)
@@ -314,6 +326,9 @@
 #define MOOD_LEVEL_SAD2 -10
 #define MOOD_LEVEL_SAD3 -15
 #define MOOD_LEVEL_SAD4 -20
+#define SANITY_CRISIS_SELF_HARM 1
+#define SANITY_CRISIS_HARM_OTHER 2
+#define SANITY_CRISIS_CREATE_ART 3
 
 #define NUTRITION_LEVEL_FAT 500
 #define NUTRITION_LEVEL_FULL 400

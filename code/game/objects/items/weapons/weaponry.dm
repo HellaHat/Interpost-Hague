@@ -10,7 +10,7 @@
 	throwforce = 10
 	w_class = ITEM_SIZE_SMALL
 
-/obj/item/weapon/nullrod/attack(mob/M as mob, mob/living/user as mob) //Paste from old-code to decult with a null rod.
+/obj/item/nullrod/attack(mob/M as mob, mob/living/user as mob) //Paste from old-code to decult with a null rod.
 	admin_attack_log(user, M, "Attacked using \a [src]", "Was attacked with \a [src]", "used \a [src] to attack")
 
 	user.setClickCooldown(DEFAULT_ATTACK_COOLDOWN)
@@ -33,12 +33,13 @@
 
 	if(GLOB.cult && iscultist(M))
 		M.visible_message("<span class='notice'>\The [user] waves \the [src] over \the [M]'s head.</span>")
-		GLOB.cult.offer_uncult(M)
+		var/datum/antagonist/cultist/cult = get_cult(M)
+		cult.offer_uncult(M)
 		return
 
 	..()
 
-/obj/item/weapon/nullrod/afterattack(var/atom/A, var/mob/user, var/proximity)
+/obj/item/nullrod/afterattack(var/atom/A, var/mob/user, var/proximity)
 	if(!proximity)
 		return
 	if(istype(A, /turf/simulated/wall/cult))

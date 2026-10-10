@@ -26,7 +26,7 @@
 
 /area/Initialize()
 	. = ..()
-	if(!requires_power || !apc)
+	if(!requires_power || !area_smes)
 		power_light = 0
 		power_equip = 0
 		power_environ = 0
@@ -178,12 +178,22 @@
 	//	new lighting behaviour with obj lights
 		icon_state = null
 
-/area/proc/set_lightswitch(var/new_switch)
+/area/proc/set_lightswitch(var/new_switch, var/bridge_startup = FALSE)
+	var/startup_cancelled = FALSE
+	if(!bridge_startup)
+		if(GLOB.station_wake_sequence.active)
+			GLOB.station_wake_sequence.enabled_rooms |= src
+		for(var/obj/machinery/light/fixture in src)
+			if(fixture.bridge_startup_pending)
+				fixture.bridge_startup_pending = FALSE
+				startup_cancelled = TRUE
 	if(lightswitch != new_switch)
 		lightswitch = new_switch
 		for(var/obj/machinery/light_switch/L in src)
 			L.sync_state()
 		update_icon()
+		power_change()
+	else if(startup_cancelled)
 		power_change()
 
 /area/proc/set_emergency_lighting(var/enable)
@@ -213,7 +223,8 @@ var/list/mob/living/forced_ambiance_list = new
 
 /area/proc/play_ambience(var/mob/living/L)
 	// Ambience goes down here -- make sure to list each area seperately for ease of adding things in later, thanks! Note: areas adjacent to each other should have the same sounds to prevent cutoff when possible.- LastyScratch
-	if(!(L))	return
+	if(!L || !L.client)
+		return
 
 	var/turf/T = get_turf(L)
 	var/hum = 0
@@ -269,10 +280,9 @@ var/list/mob/living/forced_ambiance_list = new
 		to_chat(mob, "<span class='notice'>The sudden appearance of gravity makes you fall to the floor!</span>")
 
 /area/proc/prison_break()
-	var/obj/machinery/power/apc/theAPC = get_apc()
-	if(theAPC && theAPC.operating)
-		for(var/obj/machinery/power/apc/temp_apc in src)
-			temp_apc.overload_lighting(70)
+	var/obj/machinery/power/area_smes/smes = get_area_smes()
+	if(smes && smes.operating)
+		smes.overload_lighting(70)
 		for(var/obj/machinery/door/airlock/temp_airlock in src)
 			temp_airlock.prison_open()
 		for(var/obj/machinery/door/window/temp_windoor in src)
@@ -306,4 +316,3 @@ var/list/mob/living/forced_ambiance_list = new
 
 /area/proc/has_turfs()
 	return !!(locate(/turf) in src)
-
